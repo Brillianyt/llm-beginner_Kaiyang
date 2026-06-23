@@ -26,6 +26,7 @@
    - scaling 是否 = `alpha / r`？
    - forward 是否正确叠加：`y = Wx + scaling * B(A x)`？
    - 反向是否只更新 A、B（原 W 应 `requires_grad=False`）？
+   - `merge_lora`：推理时是否把 `scaling * B@A` 正确合并回原权重 W、合并后前向输出与未合并一致、并清理 LoRA 分支？
 2. **chat template**
    - 是否用了 Qwen 官方模板（`<|im_start|>` `<|im_end|>`）？
    - 多轮对话拼接是否正确？

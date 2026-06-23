@@ -85,6 +85,9 @@ def test_multi_tool_success_rate():
         return {"test": "multi_tool_success_rate", "pass": None,
                 "skip": "data/tasks.json 不存在；跑 data/download.py 生成"}
     tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+    if not tasks:
+        return {"test": "multi_tool_success_rate", "pass": None,
+                "skip": "data/tasks.json 为空；重跑 data/download.py 生成"}
     agent = ReActAgent()
     success = 0
     details = []

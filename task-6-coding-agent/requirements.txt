@@ -6,6 +6,10 @@ requests>=2.31
 pydantic>=2.0
 pyyaml>=6.0
 tqdm>=4.65
+# SWE-bench Lite 抽样路径（python data/download.py --with-swebench，及自检读取 parquet）需要：
+datasets>=2.14
+pyarrow>=12.0
+pandas>=2.0
 # 可选对照：
 # qwen-agent>=0.0.10
 # smolagents>=0.1

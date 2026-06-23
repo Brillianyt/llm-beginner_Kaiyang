@@ -34,7 +34,7 @@
    - softmax 数值稳定性：是否减去最大值或用 fp32 计算？
 4. **KV cache**
    - cache 拼接是否在 K/V 的 sequence 维度上？
-   - 推理时只 forward 最后一个 token，cache 自动延伸？
+   - 推理时只 forward 最后一个词元，cache 自动延伸？
    - 是否做了 cache 长度上限（避免无限增长）？
    - 模型是否暴露 `block_size` / `max_seq_len`？长序列（含困惑度自检）是否按上下文长度分段，避免越界或 RoPE 外推失真？
 5. **训练**

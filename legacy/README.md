@@ -1,5 +1,7 @@
 # NLP-Beginner：自然语言处理入门练习
 
+> ⚠️ 本文是 2019 年 NLP-Beginner 的原始版本，已归档，仅供与 [LLM-Beginner](../README.md) 对比阅读。下方练习与「提交报告到 QQ 群」等说明为当年实验室内部要求，现已失效。
+
 新加入本实验室的同学，请按要求完成下面练习，并提交报告。
 
 *请完成每次练习后把report上传到QQ群中的共享文件夹中的“Reports of nlp-beginner”目录，文件命名格式为“task 1+姓名”。*

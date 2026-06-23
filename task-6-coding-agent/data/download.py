@@ -95,7 +95,7 @@ def hint_model():
     print("  ollama serve")
     print("vLLM：")
     print("  python -m vllm.entrypoints.openai.api_server "
-          "--model Qwen/Qwen2.5-Coder-7B-Instruct --quantization awq")
+          "--model Qwen/Qwen2.5-Coder-7B-Instruct-AWQ --quantization awq")
     print("llama.cpp + GGUF：")
     print("  huggingface-cli download Qwen/Qwen2.5-Coder-7B-Instruct-GGUF "
           "qwen2.5-coder-7b-instruct-q4_k_m.gguf --local-dir ./models")
@@ -106,7 +106,7 @@ def hint_swebench_harness():
     print("  python data/download.py --with-swebench")
     print("  pip install swebench")
     print("  python -m swebench.harness.run_evaluation --help")
-    print("  官方文档：https://github.com/princeton-nlp/SWE-bench")
+    print("  官方文档：https://github.com/SWE-bench/SWE-bench")
 
 
 def main():

@@ -1,6 +1,6 @@
 # LLM-Beginner：大模型与智能体入门练习
 
-本系列是 [NLP-Beginner](legacy/README.md) 在大模型时代的重构版本，是一份**独立的入门教程**，面向有 Python 与深度学习基础的学习者。沿用原系列「任务渐进 × 每个 2-4 周」的节奏，按"熟悉 Transformer → 从零实现 mini-GPT → 指令微调与对齐 → RAG → 工具调用 Agent → Mini Coding Agent"六个任务展开，技术栈对齐 2025-2026 的主流。
+本系列是 [NLP-Beginner](legacy/README.md) 在大模型时代的重构版本，是一份**独立的入门教程**，面向有 Python 与深度学习基础的学习者。沿用原系列「任务渐进 × 每个 2-4 周」的节奏，按"熟悉 Transformer → 从零实现 mini-GPT → 指令微调与对齐 → RAG → 工具调用 Agent → Mini Coding Agent"六个任务展开。
 
 llm-beginner 可独立完成，无任何前置依赖。如果同时在读《神经网络与深度学习（第二版）》（下文简称 **NNDL2**）与配套的《神经网络与深度学习案例与实践（第二版）》（下文简称 **实践书 v2**），每个任务的"延伸阅读"会指向对应章节，配合读会更顺畅。
 
@@ -22,7 +22,7 @@ llm-beginner 可独立完成，无任何前置依赖。如果同时在读《神�
 - **设备基准**：8GB 消费级 GPU（如 RTX 3060/4060）可完成任务一至四；任务五、六推荐 16GB+ 显存，或使用 Q4_K_M 量化在 8GB 上跑。Mac M 系列通过 MPS / llama.cpp 兜底。
 - **模型生态**：通义千问 Qwen 系列贯穿全程，国内可直接从 Hugging Face / ModelScope 下载。
 - **语言**：以中文为主，仅在英文数据显著更好时使用英文（如部分小模型预训练语料）。
-- **教学路线**：每项任务「先手写、再对照框架」——理解原理在前，工程效率在后。
+- **教学路线**：每项任务先手写、再对照框架——先吃透原理，再看工程上怎么封装。
 
 ## 环境与自检
 
@@ -98,7 +98,7 @@ python eval/run.py             # 3. 跑自检，结果写入 eval/result.json
       - NNDL2 第 8 章《注意力机制与 Transformer》之「注意力机制」「自注意力」「Transformer 模型」三节
       - 实践书 v2《注意力机制》章「基于双向 LSTM 和多头自注意力的文本分类」「基于自注意力模型的文本语义匹配」两节
 2. 数据集
-   1. 文本分类：[ChnSentiCorp](https://huggingface.co/datasets/seamew/ChnSentiCorp)（中文情感分类）或 [LCQMC](https://huggingface.co/datasets/shibing624/nli_zh)（文本匹配，呼应实践书 v2 的语义匹配任务）
+   1. 文本分类：[ChnSentiCorp](https://huggingface.co/datasets/seamew/ChnSentiCorp)（中文情感分类，本任务下载脚本与自检以此为准）；文本匹配方向可参考 [LCQMC](https://huggingface.co/datasets/shibing624/nli_zh)（呼应实践书 v2 的语义匹配任务，需自行改造数据与自检）
    2. Toy 任务（可选）：序列 copy / sort，便于打印注意力矩阵观察学习过程
 3. 实现要求
    1. 手写 scaled dot-product attention（缩放、softmax、mask）
@@ -135,7 +135,7 @@ python eval/run.py             # 3. 跑自检，结果写入 eval/result.json
       - NNDL2 第 8 章「现代 Transformer 的常见优化」（含 RoPE / FlashAttention / KV 缓存 / GQA / MoE）
       - 实践书 v2《大语言模型与智能体》章「nanoGPT 模型」「预训练循环」「解码 / 采样策略」三节
 2. 数据集（三档渐进，按设备与目标选择）
-   1. **Quick-start（~1MB）**：[poetryFromTang.txt](poetryFromTang.txt) —— 5 分钟跑通 pipeline、验证代码正确性
+   1. **Quick-start（~49KB）**：[poetryFromTang.txt](poetryFromTang.txt) —— 5 分钟跑通 pipeline、验证代码正确性
    2. **正式训练（~100MB，CPU 也能跑）**：[TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories) 或社区中文版 TinyStoriesChinese ——[原论文](https://arxiv.org/abs/2305.07759)证明 10M 参数模型就能学会语法和叙事，能直观看到「涌现」
    3. **进阶训练（~1GB+，建议 GPU）**：[SkyPile-150B](https://huggingface.co/datasets/Skywork/SkyPile-150B) 子集（昆仑万维开源高质量中文预训练语料）
 3. 实现要求
@@ -162,7 +162,7 @@ python eval/run.py             # 3. 跑自检，结果写入 eval/result.json
 
 > 详细资源、数据下载与自检脚本见 [task-3-sft-dpo/](task-3-sft-dpo/)
 
-在小尺寸预训练模型上做 SFT + DPO 两阶段对齐，理解从 base model 到 chat model 的全过程。本任务**扩展**实践书 v2「监督微调与 LoRA」「偏好对齐：DPO」两节：手写 LoRA、改用 MOSS 中文数据、做完整的"指令格式 → 偏好"两阶段闭环。
+在小尺寸预训练模型上做 SFT + DPO 两阶段对齐，理解从 base model 到 chat model 的全过程。本任务**扩展**实践书 v2「监督微调与 LoRA」「偏好对齐：DPO」两节：手写 LoRA、改用 MOSS 中英双语对话数据、做完整的"指令格式 → 偏好"两阶段闭环。
 
 1. 参考
    1. [LoRA: Low-Rank Adaptation](https://arxiv.org/abs/2106.09685)
@@ -202,7 +202,7 @@ python eval/run.py             # 3. 跑自检，结果写入 eval/result.json
 1. 参考
    1. [Retrieval-Augmented Generation 综述](https://arxiv.org/abs/2312.10997)
    2. [BGE Embedding 系列](https://huggingface.co/BAAI)
-   3. [RAGAS 评测框架](https://github.com/explodinggradients/ragas)
+   3. [RAGAS 评测框架](https://github.com/vibrantlabsai/ragas)
    4. **延伸阅读**：实践书 v2《大语言模型与智能体》章「检索增强生成（RAG）」一节
 2. 技术栈
    1. Embedding：[bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5)
@@ -220,7 +220,7 @@ python eval/run.py             # 3. 跑自检，结果写入 eval/result.json
    4. 评测指标：Recall@k、MRR、faithfulness、answer relevancy
    5. Query rewriting 与 HyDE 等增强策略
 6. 实验
-   1. Chunk size 扫描（128 / 256 / 512 / 1024 token）对检索质量的影响
+   1. Chunk size 扫描（128 / 256 / 512 / 1024 字符）对检索质量的影响
    2. 加 / 不加 reranker 的端到端提升
    3. Query rewriting 的有效性
    4. 用 RAGAS 打端到端分数
@@ -255,7 +255,7 @@ python eval/run.py             # 3. 跑自检，结果写入 eval/result.json
    2. ReAct 范式：Thought / Action / Observation 循环
    3. Prompt 构造与停止条件设计
    4. 错误恢复与重试策略
-   5. Token 预算与上下文管理
+   5. 词元预算与上下文管理
 7. 实验
    1. 手写 ReAct vs Qwen-Agent 原生 function calling 的成功率对比
    2. 不同模型尺寸（1.5B / 7B / 14B）的工具调用准确率
@@ -304,12 +304,12 @@ python eval/run.py             # 3. 跑自检，结果写入 eval/result.json
    4. Subagent 与 context 隔离的工程价值
    5. 长任务的 context compaction 策略
    6. Sandbox 代码执行的安全考虑
-   7. Trace 评测：步骤数、成功率、token 消耗
+   7. Trace 评测：步骤数、成功率、词元消耗
 7. 实验
    1. 同一任务在 Q4_K_M 量化 vs FP16 下的成功率差异
-   2. 单 agent vs 加 Subagent 的 token 消耗与成功率
+   2. 单 agent vs 加 Subagent 的词元消耗与成功率
    3. 纯 prompt vs 加 Skill 的成功率提升
-8. 时间：3-4 周
+8. 时间：5-6 周（全系列最大跳变：子系统最多、且完全超出教材覆盖）
 
 ---
 
@@ -317,9 +317,9 @@ python eval/run.py             # 3. 跑自检，结果写入 eval/result.json
 
 | 维度 | 设计选择 |
 | --- | --- |
-| 定位 | 独立入门教程，与 NNDL2 + 实践书 v2 形成"理论 → 带读 → 深度练习"三层递进，但无强依赖 |
+| 定位 | 独立入门教程，可与 NNDL2、实践书 v2 配合阅读，但可独立完成、无强依赖 |
 | 教学路线 | 每项任务「先手写、再对照框架」，理解原理在前 |
 | 技术栈 | 本地化优先，依赖 Hugging Face / 阿里 Qwen / 国产开源生态，国内畅通 |
 | 数据贯通 | MOSS 系列从任务三贯通到任务五（教格式 → 真调用）；唐诗数据从原 nlp-beginner 任务五延续到新任务二 |
-| 模型贯通 | Qwen2.5 体系全程：0.5B（任务 2-3）→ 7B-Instruct（任务 4-5）→ Coder-7B（任务 6） |
-| 现代性 | 覆盖 2025-2026 主流概念：RoPE、LoRA、DPO、RAG、ReAct、MCP、Skill、Subagent、CodeAct |
+| 模型贯通 | Qwen2.5 体系：0.5B（任务 3）→ 7B-Instruct（任务 4-5）→ Coder-7B（任务 6）；任务二从零训练、不属此体系 |
+| 技术覆盖 | RoPE、LoRA、DPO、RAG、ReAct、MCP、Skill、Subagent、CodeAct |

@@ -24,7 +24,7 @@ def build_tasks():
     return [
         {"id": 1, "task": "计算 (123 + 456) * 789 的结果，并告诉我结果的位数。",
          "expected_tools": ["calculator"],
-         "expected_answer_contains": ["456831", "6"]},
+         "expected_answer_contains": ["456831", ["6位", "6 位", "六位", "6 digits"]]},
         {"id": 2, "task": "用 Python 计算 100 以内所有质数的和。",
          "expected_tools": ["python_sandbox"],
          "expected_answer_contains": ["1060"]},
@@ -73,7 +73,7 @@ def main():
     print("\n方式二：vLLM（推理快）")
     print("  pip install vllm")
     print("  python -m vllm.entrypoints.openai.api_server "
-          "--model Qwen/Qwen2.5-7B-Instruct --quantization awq")
+          "--model Qwen/Qwen2.5-7B-Instruct-AWQ --quantization awq")
     print("\n方式三：llama.cpp + GGUF（最省显存）")
     print("  huggingface-cli download Qwen/Qwen2.5-7B-Instruct-GGUF "
           "qwen2.5-7b-instruct-q4_k_m.gguf --local-dir ./models")

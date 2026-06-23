@@ -1,0 +1,15 @@
+# 仓库根共用产物。各任务目录另有自己的 .gitignore（覆盖 ckpt/、data/ 产物等）。
+
+# Python 字节码（含共用的 _eval_harness 编译产物）
+__pycache__/
+*.py[cod]
+
+# 工具缓存
+.pytest_cache/
+
+# 虚拟环境
+.venv/
+venv/
+
+# Claude Code 工具产物（agent worktree、session 等，勿入公开仓库）
+.claude/

@@ -101,7 +101,10 @@ def test_rag_end_to_end():
         gold, _ = load_gold_qa()
         query = gold[0]["question"] if gold else "什么是深度学习？"
         r = answer(query)
-        ok = isinstance(r, dict) and "answer" in r and r.get("sources")
+        # 强制转成 bool：若直接用 r.get("sources")，返回 list 会让 _eval_harness 的
+        # _TAGS.get(pass) 抛 unhashable type，整个自检在写 result.json 前就崩。
+        ok = bool(isinstance(r, dict) and isinstance(r.get("answer"), str)
+                  and r["answer"].strip() and r.get("sources"))
         return {"test": "rag_end_to_end", "pass": ok,
                 "answer_preview": str(r.get("answer", ""))[:120]}
     except Exception as e:

@@ -20,7 +20,7 @@
 
 | | 内容 |
 |---|---|
-| **给你** | ChnSentiCorp 数据（HF 自动拉，约 9.6K 训练样本，二分类）/ PyTorch 2.0+ / 单卡 8GB GPU（CPU 也能跑但慢 ~10×） |
+| **给你** | ChnSentiCorp 数据（HF 自动拉，约 9.6K 训练样本，二分类）/ PyTorch 2.7+ / 单卡 8GB GPU（CPU 也能跑但慢 ~10×） |
 | **交付** | 1. `ckpt/best.pt`（训练好的模型，预期 5–50 MB） 2. `figures/` 下 ≥ 3 张注意力热图 3. `eval/result.json`（自检结果） 4. 一段 200–500 字的实验观察文字 |
 
 ## Definition of Done
@@ -30,7 +30,7 @@
 - [ ] **M1** 手写 `scaled_dot_product_attention`，自检 `attention_correctness` 通过（与官方实现误差 < 1e-5）
 - [ ] **M2** 手写 `MultiHeadAttention` + `TransformerBlock`，前向不报错且形状对
 - [ ] **M3** 在 ChnSentiCorp 上训练分类器，dev 准确率 ≥ 0.80（参考基线 ~0.85）
-- [ ] **M4** 改一遍代码加 causal mask 跑 toy 语言模型，自检 `causal_mask` 通过（未来 token 不泄漏）
+- [ ] **M4** 改一遍代码加 causal mask 跑 toy 语言模型，自检 `causal_mask` 通过（未来词元不泄漏）
 - [ ] **M5** 输出 ≥ 3 张注意力热图（建议：1 正面样本、1 负面样本、1 长句样本）
 
 加分（任选）：
@@ -98,7 +98,7 @@ python data/download.py
 **输入**：训练好的模型 + 几个测试句子
 **输出**：`figures/` 下 ≥ 3 张热图 + 报告文字
 
-用 matplotlib 画 attention weights：选一个 head、一个 layer，把 `(T, T)` 矩阵用 imshow 画出来，x/y 轴标 token。在情感正/负样本上对比：模型是否真的在看「不错」「失望」这类词？
+用 matplotlib 画 attention weights：选一个 head、一个 layer，把 `(T, T)` 矩阵用 imshow 画出来，x/y 轴标词元。在情感正/负样本上对比：模型是否真的在看「不错」「失望」这类词？
 
 ## 实现约定
 
@@ -107,7 +107,7 @@ python data/download.py
 | 文件 | 必须导出 |
 |---|---|
 | `src/attention.py` | `scaled_dot_product_attention(Q, K, V, mask=None)` —— Q/K/V 形状 `(B, H, T, D)`；`mask` 形状广播到此，`True` = 被屏蔽 |
-| `src/model.py` | `class TransformerClassifier` + `load_for_eval(ckpt_path: str) -> (model, tokenize_fn)` 工厂函数 |
+| `src/model.py` | `class TransformerClassifier` + `load_for_eval(ckpt_path: str) -> (model, tokenize_fn)` 工厂函数；自检按此契约调用：`tokenize_fn(text: str) -> LongTensor 形状 (T,)`、`model(ids)` 接受形状 `(B, T)` 的 id 张量并返回形状 `(B, num_classes)` 的 logits |
 | `ckpt/best.pt` | 训练好的 state_dict |
 
 接口可以改，但改了请同步调整 `eval/run.py`。
@@ -121,7 +121,7 @@ python eval/run.py
 | 测试 | 通过标准 | 对应 DoD |
 |---|---|---|
 | `attention_correctness` | 与 `F.scaled_dot_product_attention` 误差 < 1e-5 | M1 |
-| `causal_mask` | 未来 token V 改动后，过去位置输出不变 | M4 |
+| `causal_mask` | 未来词元的 V 改动后，过去位置输出不变 | M4 |
 | `classifier_accuracy` | dev set 准确率 ≥ 0.80 | M3 |
 
 结果写入 `eval/result.json`，提交时附上。
