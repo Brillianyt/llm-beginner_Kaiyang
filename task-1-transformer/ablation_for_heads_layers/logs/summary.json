@@ -1,0 +1,22 @@
+{
+  "h2l2": {
+    "heads": 2,
+    "layers": 2,
+    "best_dev_acc": 0.8925
+  },
+  "h4l2": {
+    "heads": 4,
+    "layers": 2,
+    "best_dev_acc": 0.9
+  },
+  "h4l4_default": {
+    "heads": 4,
+    "layers": 4,
+    "best_dev_acc": 0.8891666666666667
+  },
+  "h8l6": {
+    "heads": 8,
+    "layers": 6,
+    "best_dev_acc": 0.9025
+  }
+}

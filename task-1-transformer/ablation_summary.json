@@ -1,0 +1,11 @@
+{
+  "addnorm_baseline": 0.8925,
+  "addnorm_no_residual": 0.895,
+  "addnorm_no_layernorm": 0.8933333333333333,
+  "addnorm_no_residual_no_ln": 0.8916666666666667,
+  "hl_h2l2": 0.8925,
+  "hl_h4l2": 0.9,
+  "hl_h4l4_default": 0.8891666666666667,
+  "hl_h8l6": 0.9025,
+  "rope": 0.91
+}

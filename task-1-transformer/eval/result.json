@@ -1,0 +1,18 @@
+[
+  {
+    "test": "attention_correctness",
+    "pass": true,
+    "max_abs_diff": 9.5367431640625e-07
+  },
+  {
+    "test": "causal_mask",
+    "pass": true,
+    "leaked_diff": 0.0
+  },
+  {
+    "test": "classifier_accuracy",
+    "pass": true,
+    "accuracy": 0.9042,
+    "baseline_reference": 0.85
+  }
+]
