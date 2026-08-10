@@ -220,15 +220,21 @@ def main():
 
     figs = ROOT / 'figures' / 'ablation'
     figs.mkdir(parents=True, exist_ok=True)
+    # 汇总图（对比柱图 + 训练曲线）保留在全局 figures/ablation/
     make_comparison_plot(results, figs / 'ablation_bar.png')
     make_curves_plot(results, figs / 'ablation_curves.png')
 
+    # 每张样本热图各自放到对应 ablation 文件夹的 figures/
     sample = '这家酒店的服务非常好，房间干净整洁，前台态度也很热情，下次还会再来。'
-    print('\nGenerating cross-ablation attention heatmaps...')
+    print('\nGenerating per-ablation attention heatmaps...')
     for name, info in results.items():
         tag = name.replace('_', '-')
+        # info['src'] = .../ablation_for_xxx/src，父目录就是 ablation 文件夹
+        ablation_dir = Path(info['src']).parent
+        out_dir = ablation_dir / 'figures'
+        out_dir.mkdir(exist_ok=True)
         plot_attn_subprocess(name, info['ckpt'], info['src'], sample,
-                              str((figs / f'attn_{tag}.png').resolve()))
+                              str((out_dir / f'attn_{tag}.png').resolve()))
 
 
 if __name__ == '__main__':
