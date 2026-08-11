@@ -1,0 +1,38 @@
+[
+  {
+    "label": "10M",
+    "n_params": 6297984,
+    "best_ppl": 271.93752117836436,
+    "config": {
+      "d_model": 192,
+      "n_heads": 4,
+      "n_layers": 8,
+      "d_ff": 768,
+      "block_size": 256
+    }
+  },
+  {
+    "label": "50M",
+    "n_params": 22033152,
+    "best_ppl": 151.14352049890738,
+    "config": {
+      "d_model": 384,
+      "n_heads": 6,
+      "n_layers": 8,
+      "d_ff": 1536,
+      "block_size": 256
+    }
+  },
+  {
+    "label": "100M",
+    "n_params": 54551552,
+    "best_ppl": 118.64882788662186,
+    "config": {
+      "d_model": 512,
+      "n_heads": 8,
+      "n_layers": 12,
+      "d_ff": 2048,
+      "block_size": 256
+    }
+  }
+]

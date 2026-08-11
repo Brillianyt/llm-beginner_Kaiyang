@@ -1,0 +1,40 @@
+{
+  "rope": {
+    "best_ppl": 122.9688909447831,
+    "saturation_decline_pct": 2.5748612463225395,
+    "saturated": true,
+    "extrapolation": [
+      {
+        "block_size": 64,
+        "ppl": 122.96889690147009
+      },
+      {
+        "block_size": 128,
+        "ppl": 128.48869775008464
+      },
+      {
+        "block_size": 256,
+        "ppl": 146.2976375640872
+      }
+    ]
+  },
+  "absolute": {
+    "best_ppl": 499.46926445994916,
+    "saturation_decline_pct": 1.4106452610275217,
+    "saturated": true,
+    "extrapolation": [
+      {
+        "block_size": 64,
+        "ppl": 499.4692681821937
+      },
+      {
+        "block_size": 128,
+        "ppl": 842.0511686401902
+      },
+      {
+        "block_size": 256,
+        "ppl": 1124.0621790757577
+      }
+    ]
+  }
+}

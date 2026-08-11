@@ -1,0 +1,83 @@
+[
+  {
+    "prompt_len": 128,
+    "max_new": 32,
+    "cache_ms": 253.26356012374163,
+    "nocache_ms": 771.1150776594877,
+    "speedup": 3.0447138833661263,
+    "tok_per_s_cache": 126.35058902419745,
+    "tok_per_s_nocache": 41.49834561285896
+  },
+  {
+    "prompt_len": 128,
+    "max_new": 64,
+    "cache_ms": 513.8201238587499,
+    "nocache_ms": 1560.0908119231462,
+    "speedup": 3.036258681748359,
+    "tok_per_s_cache": 124.55720791814242,
+    "tok_per_s_nocache": 41.02325294840131
+  },
+  {
+    "prompt_len": 128,
+    "max_new": 128,
+    "cache_ms": 987.4496171250939,
+    "nocache_ms": 3500.7853815332055,
+    "speedup": 3.5452800029692173,
+    "tok_per_s_cache": 129.62686680933157,
+    "tok_per_s_nocache": 36.563223976884025
+  },
+  {
+    "prompt_len": 256,
+    "max_new": 32,
+    "cache_ms": 276.687846519053,
+    "nocache_ms": 1149.8164189979434,
+    "speedup": 4.155644830315183,
+    "tok_per_s_cache": 115.6537968782682,
+    "tok_per_s_nocache": 27.83052970133073
+  },
+  {
+    "prompt_len": 256,
+    "max_new": 64,
+    "cache_ms": 536.8064735084772,
+    "nocache_ms": 2474.5906963944435,
+    "speedup": 4.609837657547111,
+    "tok_per_s_cache": 119.22359948773851,
+    "tok_per_s_nocache": 25.862862934565307
+  },
+  {
+    "prompt_len": 256,
+    "max_new": 128,
+    "cache_ms": 1034.453653730452,
+    "nocache_ms": 5574.172768741846,
+    "speedup": 5.38851861428517,
+    "tok_per_s_cache": 123.73681463486136,
+    "tok_per_s_nocache": 22.963048565301474
+  },
+  {
+    "prompt_len": 512,
+    "max_new": 32,
+    "cache_ms": 312.3706178739667,
+    "nocache_ms": 1916.8855287134647,
+    "speedup": 6.136574373607948,
+    "tok_per_s_cache": 102.44241349521278,
+    "tok_per_s_nocache": 16.693745933528483
+  },
+  {
+    "prompt_len": 512,
+    "max_new": 64,
+    "cache_ms": 564.3367823213339,
+    "nocache_ms": 4039.9331226944923,
+    "speedup": 7.158727287058441,
+    "tok_per_s_cache": 113.40745810815915,
+    "tok_per_s_nocache": 15.841846400990486
+  },
+  {
+    "prompt_len": 512,
+    "max_new": 128,
+    "cache_ms": 1090.8689610660076,
+    "nocache_ms": 8437.185830436647,
+    "speedup": 7.734371525422951,
+    "tok_per_s_cache": 117.3376496796803,
+    "tok_per_s_nocache": 15.170935258797737
+  }
+]

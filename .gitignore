@@ -13,3 +13,4 @@ venv/
 
 # Claude Code 工具产物（agent worktree、session 等，勿入公开仓库）
 .claude/
+.aider*
