@@ -84,8 +84,14 @@ class MultiHeadAttention(nn.Module):
             (B, T, D) 注意力输出
         """
         if mask is not None:
-            # 广播 mask 到 (B, 1, T, T) 以适配多头
-            _mask = mask.unsqueeze(1)
+            # 自动 broadcast 到 (B, H, T, T)
+            # mask 形状：(T, T) / (B, T, T) / (B, H, T, T)
+            if mask.dim() == 2:                  # (T, T) -> (1, 1, T, T)
+                _mask = mask[None, None, :, :]
+            elif mask.dim() == 3:                # (B, T, T) -> (B, 1, T, T)
+                _mask = mask[:, None, :, :]
+            else:                                # 已是 (B, H, T, T)
+                _mask = mask
         else:
             _mask = None
 
