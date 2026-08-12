@@ -4,6 +4,9 @@
 __pycache__/
 *.py[cod]
 
+# Jupyter checkpoint 垃圾
+.ipynb_checkpoints/
+
 # 工具缓存
 .pytest_cache/
 
@@ -14,3 +17,8 @@ venv/
 # Claude Code 工具产物（agent worktree、session 等，勿入公开仓库）
 .claude/
 .aider*
+
+# Jupyter / VSCode checkpoints
+.ipynb_checkpoints/
+.idea/
+.vscode/
