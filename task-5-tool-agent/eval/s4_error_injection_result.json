@@ -1,0 +1,78 @@
+{
+  "stub_verification": [
+    {
+      "id": 1,
+      "steps": 2,
+      "error_steps": 0,
+      "success": true,
+      "final": "456831",
+      "error_rate": 0.0
+    },
+    {
+      "id": 2,
+      "steps": 2,
+      "error_steps": 0,
+      "success": true,
+      "final": "1060",
+      "error_rate": 0.0
+    },
+    {
+      "id": 3,
+      "steps": 2,
+      "error_steps": 0,
+      "success": true,
+      "final": "2",
+      "error_rate": 0.0
+    },
+    {
+      "id": 1,
+      "steps": 3,
+      "error_steps": 1,
+      "success": true,
+      "final": "456831",
+      "error_rate": 0.5
+    },
+    {
+      "id": 2,
+      "steps": 2,
+      "error_steps": 0,
+      "success": true,
+      "final": "1060",
+      "error_rate": 0.5
+    },
+    {
+      "id": 3,
+      "steps": 2,
+      "error_steps": 0,
+      "success": true,
+      "final": "2",
+      "error_rate": 0.5
+    },
+    {
+      "id": 1,
+      "steps": 4,
+      "error_steps": 4,
+      "success": false,
+      "final": "",
+      "error_rate": 0.8
+    },
+    {
+      "id": 2,
+      "steps": 3,
+      "error_steps": 1,
+      "success": true,
+      "final": "1060",
+      "error_rate": 0.8
+    },
+    {
+      "id": 3,
+      "steps": 3,
+      "error_steps": 1,
+      "success": true,
+      "final": "2",
+      "error_rate": 0.8
+    }
+  ],
+  "model_runs": [],
+  "skipped_model_runs": true
+}

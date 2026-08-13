@@ -1,0 +1,54 @@
+{
+  "skipped_model_runs": true,
+  "reason": "http://localhost:11434/v1 不可达",
+  "prompt_lengths": [
+    {
+      "label": "0-shot, no hint",
+      "few_shot_count": 0,
+      "include_error_hint": false,
+      "messages": 2,
+      "chars": 1254,
+      "approx_tokens": 313
+    },
+    {
+      "label": "0-shot, +hint",
+      "few_shot_count": 0,
+      "include_error_hint": true,
+      "messages": 2,
+      "chars": 1294,
+      "approx_tokens": 323
+    },
+    {
+      "label": "1-shot, no hint",
+      "few_shot_count": 1,
+      "include_error_hint": false,
+      "messages": 4,
+      "chars": 1437,
+      "approx_tokens": 359
+    },
+    {
+      "label": "1-shot, +hint",
+      "few_shot_count": 1,
+      "include_error_hint": true,
+      "messages": 4,
+      "chars": 1477,
+      "approx_tokens": 369
+    },
+    {
+      "label": "3-shot, no hint",
+      "few_shot_count": 3,
+      "include_error_hint": false,
+      "messages": 8,
+      "chars": 2173,
+      "approx_tokens": 543
+    },
+    {
+      "label": "3-shot, +hint",
+      "few_shot_count": 3,
+      "include_error_hint": true,
+      "messages": 8,
+      "chars": 2213,
+      "approx_tokens": 553
+    }
+  ]
+}

@@ -120,9 +120,59 @@ def test_multi_tool_success_rate():
 
 
 def test_error_recovery():
-    """注入错误工具响应（暂为可选；学生需要实现 src/agent.py 的 inject_error 钩子）。"""
-    return {"test": "error_recovery", "pass": None,
-            "skip": "需要学生实现 inject_error 测试钩子；可选实验"}
+    """注入错误工具响应，验证 inject_error 钩子 + agent 自我纠错。
+
+    用 stub LLM（固定输出 → calculator → Final Answer），注入 1 次错误后
+    检查 agent 能否通过其他工具或重试路径完成任务。
+    """
+    from src.agent import ReActAgent
+
+    class _StubLLM:
+        """第 1 轮调 calculator，第 2 轮根据上一步 Observation 决定下一步。"""
+
+        def __init__(self):
+            self.n = 0
+
+        def chat(self, messages, model=None, **kw):
+            self.n += 1
+            # 检查最近 Observation 是否带 [ERROR: ...]
+            last_obs = ""
+            for m in reversed(messages):
+                if m.get("role") == "user" and "Observation" in m.get(
+                        "content", ""):
+                    last_obs = m["content"]
+                    break
+            if self.n == 1:
+                return (
+                    "Thought: 先用 calculator\n"
+                    "Action: calculator\n"
+                    "Action Input: {\"expression\": \"1+1\"}"
+                )
+            if "[ERROR" in last_obs:
+                # 报错就换工具
+                return (
+                    "Thought: 换 python_sandbox\n"
+                    "Action: python_sandbox\n"
+                    "Action Input: {\"code\": \"print(2)\"}"
+                )
+            return (
+                "Thought: OK\nAction: Final Answer\n"
+                "Action Input: 测试成功"
+            )
+
+    agent = ReActAgent(llm_client=_StubLLM(), max_steps=5)
+    # 注入 1 次 calculator 错误
+    agent.inject_error("calculator", "[模拟失败]")
+    trace = agent.run("测试任务")
+    # 验证：trace 里至少有 1 步带 [ERROR: ...]，且 success=True
+    has_error_step = any(s.get("is_error") for s in trace["steps"])
+    return {
+        "test": "error_recovery",
+        "pass": bool(has_error_step and trace["success"]),
+        "has_error_step": has_error_step,
+        "success": trace["success"],
+        "n_steps": len(trace["steps"]),
+    }
 
 
 if __name__ == "__main__":

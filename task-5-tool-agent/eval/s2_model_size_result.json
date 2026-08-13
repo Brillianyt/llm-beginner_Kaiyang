@@ -1,0 +1,5 @@
+{
+  "skipped": true,
+  "reason": "http://localhost:11434/v1 不可达",
+  "models_tested": []
+}
