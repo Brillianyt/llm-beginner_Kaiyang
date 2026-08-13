@@ -12,3 +12,6 @@ eval/result.json
 eval/traces/
 *.pyc
 .venv/
+
+# 本地参考代码仓库（不入公开仓库，太大）
+reference/claude-code/
