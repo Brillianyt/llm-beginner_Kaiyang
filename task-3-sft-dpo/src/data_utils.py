@@ -95,6 +95,8 @@ def load_moss_sft(
             data_dir / "moss-003-sft-with-tools-no-text2image.jsonl.zip",
             data_dir / "moss-003-sft-with-tools-text2image.jsonl",
             data_dir / "moss-003-sft-with-tools-text2image.jsonl.zip",
+            # 解压后的实际文件名（moss-003-sft-plugin 包里的清单）
+            data_dir / "conversations_with_tools_with_inner_instruction_no_text2image_train_all_random_meta0.5_0.1_0.01_moss_0709.jsonl",
         ]
     else:
         candidates = [data_dir / f"{split}.jsonl", data_dir / f"{split}.jsonl.zip"]
@@ -131,6 +133,10 @@ def _row_to_messages(row: dict) -> list[dict] | None:
         ]
     if "messages" in row:
         return list(row["messages"])
+    if "chat" in row:
+        # MOSS-003-sft-plugin 的 with-tools 格式：
+        #   {"meta_instruction": ..., "chat": {"turn_1": {"Human":..., "MOSS":..., ...}, ...}}
+        return _moss_chat_to_messages(row)
     if "prompt" in row and "response" in row:
         # 单轮 SFT。
         return [
@@ -138,6 +144,55 @@ def _row_to_messages(row: dict) -> list[dict] | None:
             {"role": "assistant", "content": row["response"]},
         ]
     return None
+
+
+# MOSS-003 chat 字段里用的标记。每一段都形如 ``<|Human|>: ...<eoh>\\n``。
+_MOSS_TURN_END_MARKERS = ("<eoh>", "<eom>", "<eot>", "<eoc>")
+
+
+def _strip_moss_turn(text: str, header_marker: str) -> str:
+    """去掉 ``<|Human|>: `` 头与 ``<eoh>\\n`` 尾，保留纯内容。"""
+    text = text.strip()
+    # 1. 去掉 header（可能带或不带冒号）
+    if text.startswith(header_marker + ":"):
+        text = text[len(header_marker) + 1 :]
+    elif text.startswith(header_marker):
+        text = text[len(header_marker) :]
+    # 2. 去掉结尾的 eoh/eom/eot/eoc
+    for tail in _MOSS_TURN_END_MARKERS:
+        if text.endswith(tail):
+            text = text[: -len(tail)]
+            break
+    return text.strip()
+
+
+def _moss_chat_to_messages(row: dict) -> list[dict] | None:
+    """MOSS with-tools 行 → ``[system, user, assistant, ...]``。
+
+    只取 ``Human`` 和 ``MOSS`` 两类发言作为 user / assistant；``Inner Thoughts``
+    / ``Commands`` / ``Tool Responses`` 视为工具交互的中间产物，不直接进 SFT
+    训练样本。``meta_instruction`` 作为系统 prompt 放在最前面。
+    """
+    msgs: list[dict] = []
+    meta = row.get("meta_instruction")
+    if meta:
+        msgs.append({"role": "system", "content": meta})
+    chat = row.get("chat") or {}
+    for key in sorted(chat.keys()):
+        turn = chat[key]
+        if not isinstance(turn, dict):
+            continue
+        if "Human" in turn:
+            content = _strip_moss_turn(str(turn["Human"]), "<|Human|>")
+            if content:
+                msgs.append({"role": "user", "content": content})
+        if "MOSS" in turn:
+            content = _strip_moss_turn(str(turn["MOSS"]), "<|MOSS|>")
+            if content:
+                msgs.append({"role": "assistant", "content": content})
+    if not msgs:
+        return None
+    return msgs
 
 
 # ---------------------------------------------------------------------------
