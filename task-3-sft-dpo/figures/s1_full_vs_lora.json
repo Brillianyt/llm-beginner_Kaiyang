@@ -1,0 +1,21 @@
+{
+  "full": {
+    "name": "full",
+    "trainable_params": 494032768,
+    "total_params": 494032768,
+    "trainable_ratio": 1.0,
+    "peak_memory_mb": 4775.28564453125,
+    "steps_per_sec": 7.914101678080546,
+    "final_loss": 0.0003136502637062222
+  },
+  "lora": {
+    "name": "lora",
+    "trainable_params": 540672,
+    "total_params": 494573440,
+    "trainable_ratio": 0.0010932087254827108,
+    "peak_memory_mb": 1051.9990234375,
+    "steps_per_sec": 12.657753499114213,
+    "final_loss": 0.6276022791862488
+  },
+  "lora_trainable_ratio_vs_full": 0.0010932087254827108
+}

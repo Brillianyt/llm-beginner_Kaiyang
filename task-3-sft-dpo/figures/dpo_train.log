@@ -1,0 +1,8 @@
+  step   100 | loss 0.7279 | margin 0.0085 | 25.0s
+  step   200 | loss 0.6931 | margin 0.0328 | 47.4s
+  step   300 | loss 0.6511 | margin 0.0476 | 70.9s
+  step   400 | loss 0.6794 | margin 0.0986 | 94.0s
+  step   500 | loss 0.6922 | margin 0.1377 | 116.7s
+  step   600 | loss 0.6997 | margin 0.1958 | 140.8s
+  step   700 | loss 0.6327 | margin 0.2661 | 164.3s
+  step   800 | loss 0.6859 | margin 0.2901 | 187.9s

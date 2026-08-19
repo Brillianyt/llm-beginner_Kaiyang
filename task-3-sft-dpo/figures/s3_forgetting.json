@@ -1,0 +1,24 @@
+{
+  "base": {
+    "accuracy": 0.2,
+    "n_samples": 5,
+    "pred_dist": {
+      "A": 4,
+      "B": 1,
+      "C": 0,
+      "D": 0
+    }
+  },
+  "sft": {
+    "accuracy": 0.6,
+    "n_samples": 5,
+    "pred_dist": {
+      "A": 1,
+      "B": 2,
+      "C": 0,
+      "D": 2
+    }
+  },
+  "delta_accuracy": 0.39999999999999997,
+  "samples": 5
+}

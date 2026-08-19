@@ -1,0 +1,38 @@
+[
+  {
+    "rank": 4,
+    "alpha": 4,
+    "trainable_params": 270336,
+    "total_params": 494303104,
+    "peak_memory_mb": 1050.4140625,
+    "final_loss": 0.632158637046814,
+    "steps_per_sec": 11.152024903001166
+  },
+  {
+    "rank": 8,
+    "alpha": 8,
+    "trainable_params": 540672,
+    "total_params": 494573440,
+    "peak_memory_mb": 1051.9990234375,
+    "final_loss": 0.6275976896286011,
+    "steps_per_sec": 12.635573278753862
+  },
+  {
+    "rank": 16,
+    "alpha": 16,
+    "trainable_params": 1081344,
+    "total_params": 495114112,
+    "peak_memory_mb": 1054.953125,
+    "final_loss": 0.6220264434814453,
+    "steps_per_sec": 12.563326527742841
+  },
+  {
+    "rank": 32,
+    "alpha": 32,
+    "trainable_params": 2162688,
+    "total_params": 496195456,
+    "peak_memory_mb": 1061.3505859375,
+    "final_loss": 0.6087073683738708,
+    "steps_per_sec": 12.56798174041166
+  }
+]
