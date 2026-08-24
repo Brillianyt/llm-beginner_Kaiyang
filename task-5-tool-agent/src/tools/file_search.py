@@ -118,7 +118,8 @@ def run(args: dict[str, Any], allowed_root: Path | None = None) -> str:
     target_dir = str(args["dir"])
 
     if allowed_root is None:
-        allowed_root = Path(__file__).resolve().parents[3]  # task-5-tool-agent/src/tools/file_search.py
+        # 默认根 = task-5-tool-agent/，让 "data/agent-fixtures" 相对路径能命中
+        allowed_root = Path(__file__).resolve().parents[2]
     allowed_root = _safe_root(allowed_root)
 
     search_dir = _resolve_target(target_dir, allowed_root)

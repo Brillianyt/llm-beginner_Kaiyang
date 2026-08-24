@@ -59,6 +59,25 @@ python data/download.py
 
 显存吃紧可改 vLLM 量化版（`Qwen2.5-7B-Instruct-AWQ`）或 llama.cpp GGUF（`q4_k_m`），`data/download.py` 末尾打印了三种部署方式。
 
+**本次实跑使用 SGLang**（推荐 PPU/A100 等大显存场景）：
+
+```bash
+python -c "from modelscope import snapshot_download; snapshot_download('Qwen/Qwen2.5-7B-Instruct', cache_dir='/root/models')"
+sglang serve \
+  --model-path /root/models/models/Qwen--Qwen2.5-7B-Instruct/snapshots/master \
+  --host 0.0.0.0 --port 30000 \
+  --trust-remote-code --context-length 8192 --mem-fraction-static 0.85
+```
+
+然后跑 eval（环境变量指向 SGLang endpoint）：
+
+```bash
+OPENAI_BASE_URL=http://localhost:30000/v1 \
+OPENAI_API_KEY=EMPTY \
+OPENAI_MODEL=/root/models/models/Qwen--Qwen2.5-7B-Instruct/snapshots/master \
+python eval/run.py
+```
+
 **常见坑**：
 
 - 客户端没指对 `OPENAI_BASE_URL` / `OPENAI_API_KEY`：Ollama 走 `http://localhost:11434/v1`、key 随便填（如 `ollama`），不是真去调 openai.com

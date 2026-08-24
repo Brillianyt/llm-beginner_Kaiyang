@@ -102,12 +102,13 @@ def test_file_search() -> bool:
     header("file_search")
     from src.tools import file_search
     passed = True
+    # 默认 allowed_root 现在是 task-5-tool-agent/，所以相对路径 data/agent-fixtures 就够了
     cases = [
-        ({"pattern": "*.md", "dir": "task-5-tool-agent/data/agent-fixtures"},
+        ({"pattern": "*.md", "dir": "data/agent-fixtures"},
          "README.md", "glob *.md"),
-        ({"pattern": "TODO", "dir": "task-5-tool-agent/data/agent-fixtures"},
+        ({"pattern": "TODO", "dir": "data/agent-fixtures"},
          "todo_note.md", "内容正则 TODO"),
-        ({"pattern": "README.md", "dir": "task-5-tool-agent/data/agent-fixtures"},
+        ({"pattern": "README.md", "dir": "data/agent-fixtures"},
          "任务五", "返回内容片段"),
     ]
     for args, expect, desc in cases:

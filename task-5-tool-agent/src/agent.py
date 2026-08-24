@@ -16,7 +16,7 @@ from typing import Any
 
 from .llm_client import LLMClient, LLMConfig, LLMError
 from .parser import ActionParser
-from .prompt import PromptBuilder
+from .prompt import PromptBuilder, compress_history
 from .tools import default_registry
 from .tools.base import ToolRegistry
 from .trace import AgentTrace, make_step, trace_to_text
@@ -55,6 +55,8 @@ class ReActAgent:
         model: str | None = None,
         few_shot_count: int = 3,
         include_error_hint: bool = True,
+        history_compress_threshold: int = 8,
+        history_keep_recent: int = 4,
     ) -> None:
         if tools is None:
             tools = default_registry()
@@ -76,6 +78,8 @@ class ReActAgent:
             include_error_hint=include_error_hint,
         )
         self.parser = ActionParser()
+        self.history_compress_threshold = history_compress_threshold
+        self.history_keep_recent = history_keep_recent
 
     # ============================================================ 主入口
     def run(self, task: str) -> AgentTrace:
@@ -88,10 +92,19 @@ class ReActAgent:
         state = STATE_INIT
         final_answer: str = ""
         success = False
+        # 全局 step counter：多 Action 时每个 Action 独立编号
+        self._global_step = 0
 
         for step_idx in range(self.max_steps):
             # ----- INIT / THOUGHT
             state = STATE_THOUGHT
+            # 历史压缩：如果 messages 太长,压缩早期步骤
+            if len(messages) > self.history_compress_threshold + 2:
+                messages = compress_history(
+                    messages,
+                    keep_recent=self.history_keep_recent,
+                    summarize_threshold=self.history_compress_threshold,
+                )
             try:
                 response = self.llm.chat(
                     messages, model=self.model
@@ -112,9 +125,10 @@ class ReActAgent:
             if self.parser.is_retry(parsed):
                 state = STATE_RETRY
                 steps.append(make_step(
-                    step_idx, state,
+                    self._global_step, state,
                     thought=parsed.get("thought", ""),
                 ))
+                self._global_step += 1
                 messages.append({
                     "role": "user",
                     "content": self.prompt_builder.retry_message(
@@ -128,37 +142,83 @@ class ReActAgent:
                 state = STATE_FINAL
                 final_answer = str(parsed["action_input"])
                 steps.append(make_step(
-                    step_idx, state,
+                    self._global_step, state,
                     thought=parsed["thought"],
                     action="Final Answer",
                     action_input=final_answer,
                 ))
+                self._global_step += 1
                 success = True
                 break
 
-            # ----- ACTION：路由 + 调用
+            # ----- ACTION：路由 + 调用（支持多 Action 并行）
             state = STATE_ACTION
-            action = parsed["action"]
-            action_input = parsed["action_input"]
-            observation = self.tools.call(action, action_input)
-            step = make_step(
-                step_idx, state,
-                thought=parsed["thought"],
-                action=action,
-                action_input=action_input,
-                observation=observation,
-            )
-            steps.append(step)
+            actions_to_run = parsed.get("actions", [])
+            if not actions_to_run:
+                # 兼容性兜底
+                actions_to_run = [{"action": parsed.get("action"),
+                                    "action_input": parsed.get("action_input")}]
 
-            # ----- OBSERVE：拼回 prompt
+            # 边界处理：如果 actions_to_run 中有 Final Answer,
+            # 截断到 Final Answer（包括它本身）,前面的非 Final Answer action 丢弃
+            # 找到第一个 Final Answer 的索引
+            final_idx = None
+            for i, act in enumerate(actions_to_run):
+                if act["action"] == "Final Answer":
+                    final_idx = i
+                    break
+            if final_idx is not None:
+                actions_to_run = actions_to_run[final_idx:]
+                if len(actions_to_run) == 1 and actions_to_run[0]["action"] == "Final Answer":
+                    # 退化为单 Action Final Answer 终止
+                    final_answer = str(actions_to_run[0]["action_input"])
+                    steps.append(make_step(
+                        self._global_step, STATE_FINAL,
+                        thought=parsed["thought"],
+                        action="Final Answer",
+                        action_input=final_answer,
+                    ))
+                    self._global_step += 1
+                    success = True
+                    break
+
+            # 拼接 assistant message 记录完整多 Action
+            import json as _json
+            action_lines = [f"Thought: {parsed['thought']}"]
+            for i, act in enumerate(actions_to_run, 1):
+                action_lines.append(f"Action: {act['action']}")
+                ai = act["action_input"]
+                ai_text = _json.dumps(ai, ensure_ascii=False) if isinstance(ai, dict) else str(ai)
+                action_lines.append(f"Action Input: {ai_text}")
+            messages.append({"role": "assistant", "content": "\n".join(action_lines)})
+
+            # 依次执行每个 Action（本地同步串行，但 LLM 角度是并行的"同 Thought 多 Action"）
+            combined_obs = []
+            for act in actions_to_run:
+                action = act["action"]
+                action_input = act["action_input"]
+                observation = self.tools.call(action, action_input)
+                step = make_step(
+                    self._global_step, state,
+                    thought=parsed["thought"],
+                    action=action,
+                    action_input=action_input,
+                    observation=observation,
+                )
+                self._global_step += 1
+                steps.append(step)
+                combined_obs.append((action, observation))
+
+            # ----- OBSERVE：拼回 prompt（合并多个 Observation）
             state = STATE_OBSERVE
-            messages = self.prompt_builder.append_observation(
-                messages,
-                thought=parsed["thought"],
-                action=action,
-                action_input=action_input,
-                observation=observation,
+            obs_text = "\n".join(
+                f"Observation [{act}]: {obs}" for act, obs in combined_obs
             )
+            from .prompt import sanitize_observation
+            messages.append({
+                "role": "user",
+                "content": sanitize_observation(obs_text),
+            })
 
             # ----- 卡死检测
             if self._is_stuck(steps):

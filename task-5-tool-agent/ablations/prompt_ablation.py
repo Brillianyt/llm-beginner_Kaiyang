@@ -114,21 +114,8 @@ def main() -> int:
     base_url = os.environ.get("OPENAI_BASE_URL",
                               "http://localhost:11434/v1")
     api_key = os.environ.get("OPENAI_API_KEY", "ollama")
-    probe_cfg = LLMConfig(base_url=base_url, api_key=api_key,
-                          model="qwen2.5:7b-instruct", timeout=5.0)
-    if not _probe_endpoint(probe_cfg):
-        print(f"\n[SKIP] {base_url} 不可达；S3 真模型消融需要 Ollama / vLLM 运行")
-        # 写 stub 结果（含 prompt 长度数据）
-        out = ROOT / "eval" / "s3_prompt_ablation_result.json"
-        out.write_text(json.dumps({
-            "skipped_model_runs": True,
-            "reason": f"{base_url} 不可达",
-            "prompt_lengths": lengths,
-        }, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"占位结果写入 {out.relative_to(ROOT)}")
-        return 0
-
-    print("\n=== 真模型消融（依赖 LLM）===")
+    # 直接尝试：超时加长(60s) + 跳过 probe (probe 容易把慢冷启动误判)
+    print(f"\n=== 真模型消融（依赖 LLM at {base_url}）===")
     model = os.environ.get("OPENAI_MODEL", "qwen2.5:7b-instruct")
     cfg_obj = LLMConfig(base_url=base_url, api_key=api_key, model=model,
                         timeout=60.0)
@@ -136,7 +123,7 @@ def main() -> int:
     for cfg in CONFIGS:
         if args.configs and cfg["label"] not in args.configs:
             continue
-        print(f"\n--- {cfg['label']} ---")
+        print(f"\n--- {cfg['label']} ---", flush=True)
         agent = ReActAgent(
             llm_client=LLMClient(cfg_obj),
             max_steps=10,
@@ -151,12 +138,12 @@ def main() -> int:
                 ok = _answer_matches(ans,
                                      t.get("expected_answer_contains", []))
                 success += int(ok)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"    task {t['id']} error: {str(e)[:60]}", flush=True)
         rate = success / max(1, len(tasks))
         config_results.append({**cfg, "rate": rate,
                                "n": len(tasks), "success": success})
-        print(f"  命中率：{rate:.1%} ({success}/{len(tasks)})")
+        print(f"  命中率：{rate:.1%} ({success}/{len(tasks)})", flush=True)
 
     out = ROOT / "eval" / "s3_prompt_ablation_result.json"
     out.write_text(json.dumps({
