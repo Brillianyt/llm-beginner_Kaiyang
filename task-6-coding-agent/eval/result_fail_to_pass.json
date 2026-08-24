@@ -1,0 +1,42 @@
+{
+  "astropy__astropy-12907": {
+    "done_reason": "max_turns",
+    "turn_count": 12,
+    "tool_calls": [
+      "read_file",
+      "list_files",
+      "read_file",
+      "list_files",
+      "read_file",
+      "list_files",
+      "read_file",
+      "list_files",
+      "read_file",
+      "list_files",
+      "read_file",
+      "list_files"
+    ],
+    "fail_to_pass_exit": 4,
+    "fail_to_pass_summary": "no tests ran in 0.12s"
+  },
+  "astropy__astropy-14365": {
+    "done_reason": "max_turns",
+    "turn_count": 12,
+    "tool_calls": [
+      "edit",
+      "read_file",
+      "edit",
+      "read_file",
+      "edit",
+      "read_file",
+      "edit",
+      "read_file",
+      "edit",
+      "read_file",
+      "edit",
+      "read_file"
+    ],
+    "fail_to_pass_exit": 1,
+    "fail_to_pass_summary": "1 failed, 1 passed in 0.96s"
+  }
+}
