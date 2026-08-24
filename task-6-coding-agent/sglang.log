@@ -618,3 +618,6 @@ Because if it is enabled, the `qv` received by the PPU FA3 interface will not be
 [2026-08-24 18:51:44] Prefill batch, #new-seq: 1, #new-token: 1, #cached-token: 7044, token usage: 0.01, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: True, input throughput (token/s): 1.32
 [2026-08-24 18:51:44] Decode batch, #running-req: 1, #token: 7082, token usage: 0.01, cuda graph: True, gen throughput (token/s): 100.78, #queue-req: 0
 [2026-08-24 18:51:44] INFO:     127.0.0.1:41052 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-08-24 19:15:58] Prefill batch, #new-seq: 1, #new-token: 175, #cached-token: 6, token usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: True, input throughput (token/s): 0.12
+[2026-08-24 19:15:58] Decode batch, #running-req: 1, #token: 198, token usage: 0.00, cuda graph: True, gen throughput (token/s): 0.03, #queue-req: 0
+[2026-08-24 19:15:58] INFO:     127.0.0.1:52324 - "POST /v1/chat/completions HTTP/1.1" 200 OK

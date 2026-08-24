@@ -132,6 +132,43 @@ class TestToolSafety(unittest.TestCase):
         self.assertIn("list_files", p)
         self.assertIn("Explore before you read", p)
 
+    def test_text_tool_fallback_recorded_once_not_per_turn(self):
+        """The fallback note must be a per-run counter + a single THOUGHT,
+        not a noisy THOUGHT per turn (it's the normal path for this model)."""
+        from src.agent import CodingAgent, _parse_text_tool_calls
+        from src.llm_client import ChatCompletion, ChatMessage
+        from src.tools.base import clear_read_registry
+        clear_read_registry()
+
+        agent = CodingAgent(max_turns=3)
+        # A fake LLM that always replies with text-mode tool calls.
+        real = agent.llm.chat
+        calls = {"n": 0}
+
+        def fake_chat(messages, **kw):
+            calls["n"] += 1
+            return ChatCompletion(
+                message=ChatMessage(
+                    role="assistant",
+                    content='```json\n{"name": "list_files", "arguments": {"path": "."}}\n```',
+                ),
+                finish_reason="stop",
+                usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            )
+
+        agent.llm.chat = fake_chat
+        try:
+            trace = agent.run(repo_path=str(ROOT / "data" / "toy-repo"), issue="hi")
+        finally:
+            agent.llm.chat = real
+
+        # The fallback counter should reflect every fallback turn.
+        self.assertGreaterEqual(trace.get("text_tool_call_fallback", 0), 2)
+        # But only ONE explanatory THOUGHT step should be recorded.
+        thoughts = [s for s in trace["steps"] if s.get("kind") == "thought"
+                    and "fallback" in str(s.get("payload", {}))]
+        self.assertLessEqual(len(thoughts), 1)
+
     def test_git_apply_rolls_back_on_failure(self):
         """A patch that fails after partially writing must leave the
         working tree byte-identical to its pre-call state."""

@@ -189,16 +189,27 @@ class CodingAgent:
                 "tool_calls": msg.tool_calls,
             })
 
-            # Fallback: if the model did not produce native tool_calls but
-            # its content contains a JSON tool-call block, synthesise one.
+            # Fallback: Qwen2.5-Coder-7B-Instruct via SGLang never emits
+            # native tool_calls — it writes `<function_call>`/JSON as text.
+            # Synthesise OpenAI-shaped tool_calls when that happens.
             if not msg.tool_calls:
                 synthesized = _parse_text_tool_calls(msg.content or "")
                 if synthesized:
                     msg.tool_calls = synthesized
-                    trace.append(TraceStep(kind=StepKind.THOUGHT, payload={
-                        "note": "fallback: parsed text-mode tool calls",
-                        "count": len(synthesized),
-                    }))
+                    # Record this once per run (a counter + flag), not a
+                    # noisy THOUGHT step per turn — it's the *normal* path
+                    # for this model, not an anomaly.
+                    trace["text_tool_call_fallback"] = int(
+                        trace.get("text_tool_call_fallback", 0)
+                    ) + 1
+                    if trace.get("text_tool_call_fallback") == 1:
+                        trace.append(TraceStep(kind=StepKind.THOUGHT, payload={
+                            "note": (
+                                "fallback: model emitted text-mode tool calls "
+                                "(no native tool_calls); synthesising from text"
+                            ),
+                            "count": len(synthesized),
+                        }))
             trace["last_assistant_excerpt"] = (msg.content or "")[:400]
             trace["token_usage"] = resp.usage
 
