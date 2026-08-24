@@ -50,7 +50,7 @@ log = logging.getLogger("coding_agent")
 
 MAX_TURNS_DEFAULT = 50
 
-_PATCH_FENCE_RE = re.compile(r"```(?:diff|patch)?\s*\n(.*?)```", re.DOTALL)
+_PATCH_FENCE_RE = re.compile(r"```(?:diff|patch|python|py)?\s*\n(.*?)```", re.DOTALL)
 _FINALISE_RE = re.compile(r"^\s*(?:##\s*Summary|Done|<answer>)", re.IGNORECASE | re.MULTILINE)
 # NOTE: there is intentionally NO ``_JSON_TOOL_RE`` regex here.  Tool calls
 # arrive ONLY via ``message.tool_calls`` from the vLLM server's
