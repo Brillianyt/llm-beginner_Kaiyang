@@ -2,24 +2,17 @@
   "summaries": [
     {
       "instance_id": "astropy__astropy-12907",
-      "duration_s": 9,
-      "done_reason": "max_turns",
-      "turn_count": 12,
+      "duration_s": 5,
+      "done_reason": "completed",
+      "turn_count": 5,
       "tool_call_native_rate": 1.0,
       "fallback_markers": [],
       "tool_calls_dispatched": [
-        "list_files",
-        "grep",
         "read_file",
-        "grep",
-        "grep",
-        "grep",
-        "grep",
-        "grep",
-        "grep",
-        "grep",
-        "grep",
-        "grep"
+        "read_file",
+        "edit",
+        "run_tests",
+        "submit_text"
       ],
       "agent_edited_files": [
         "separable.py"
@@ -31,7 +24,7 @@
         "separable.py"
       ],
       "files_wrong": [],
-      "agent_output_chars": 0,
+      "agent_output_chars": 580,
       "verdict": "PASS"
     },
     {
@@ -55,16 +48,24 @@
     },
     {
       "instance_id": "astropy__astropy-14365",
-      "duration_s": 3,
-      "done_reason": "completed",
-      "turn_count": 4,
+      "duration_s": 8,
+      "done_reason": "max_turns",
+      "turn_count": 12,
       "tool_call_native_rate": 1.0,
       "fallback_markers": [],
       "tool_calls_dispatched": [
+        "edit",
         "read_file",
         "edit",
-        "run_tests",
-        "submit_text"
+        "read_file",
+        "edit",
+        "read_file",
+        "edit",
+        "read_file",
+        "edit",
+        "read_file",
+        "edit",
+        "read_file"
       ],
       "agent_edited_files": [
         "qdp.py"
@@ -76,7 +77,7 @@
         "qdp.py"
       ],
       "files_wrong": [],
-      "agent_output_chars": 12,
+      "agent_output_chars": 239,
       "verdict": "PASS"
     }
   ],

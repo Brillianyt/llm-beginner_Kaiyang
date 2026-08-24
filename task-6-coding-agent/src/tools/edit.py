@@ -104,9 +104,52 @@ class EditTool(BaseTool):
         match_count = text.count(old)
 
         if match_count == 0:
+            # Find lines similar to ``old`` so the model can see what
+            # the file actually contains.  Qwen2.5-Coder-7B tends to
+            # hallucinate non-existent lines (e.g. ``if line.strip()
+            # .upper().startswith('READ SERR')`` for the qdp bug) AND
+            # to drop leading whitespace, which makes ``text.count``
+            # miss the real line.  We show the closest matching lines
+            # INCLUDING their original indentation, plus the first line
+            # of the model's old_string so they can see what's wrong.
+            old_first_line = old.splitlines()[0] if old.splitlines() else old
+            old_first_token = old_first_line.split()[0] if old_first_line.split() else ""
+            hint_lines: list[str] = []
+            if old_first_token:
+                for ln, line in enumerate(text.splitlines(), start=1):
+                    # Match if the token appears anywhere (so we
+                    # also surface whitespace-prefixed matches).
+                    if old_first_token in line:
+                        hint_lines.append(f"  L{ln}: {line.rstrip()[:160]}")
+                        if len(hint_lines) >= 10:
+                            break
+            # Compute character-level similarity to surface near-misses.
+            import difflib as _difflib
+            near_lines = []
+            for ln, line in enumerate(text.splitlines(), start=1):
+                ratio = _difflib.SequenceMatcher(
+                    a=old_first_line.strip(), b=line.strip(), autojunk=False
+                ).ratio()
+                if ratio >= 0.5:
+                    near_lines.append((ratio, ln, line.rstrip()[:160]))
+            near_lines.sort(reverse=True)
+            near_hint = ""
+            if near_lines:
+                near_hint = "\n--- near matches (token-stripped) ---\n" + "\n".join(
+                    f"  {ratio:.2f} L{ln}: {content}"
+                    for ratio, ln, content in near_lines[:5]
+                )
+            hint = (
+                ("\n--- lines containing "
+                 f"'{old_first_token}' ---\n" + "\n".join(hint_lines))
+                if hint_lines else ""
+            ) + near_hint
             return (
                 f"[ERROR] old_string not found in {path_str}. "
-                f"Re-read the file and copy the exact text."
+                f"Re-read the file and copy the exact text INCLUDING "
+                f"leading whitespace. "
+                f"Your old_string first line: {old_first_line[:200]!r}"
+                f"{hint}"
             )
         if match_count > 1 and not replace_all:
             return (

@@ -112,13 +112,39 @@ class ReadFileTool(BaseTool):
         if not target.exists():
             # Give the model a constructive next step instead of a bare
             # error — a bare "file not found" makes models (especially
-            # 7B-class) loop guessing filenames forever.
+            # 7B-class) loop guessing filenames forever.  We list every
+            # ``.py`` file in the same directory so the model has
+            # concrete alternatives without an extra round trip to
+            # ``list_files``.  Sort with the target's stem-prefix first
+            # so the closest matches appear at the top.
+            existing: list[tuple[int, str]] = []
+            parent = target.parent if target.parent.is_dir() else repo_root
+            target_stem = target.stem.lower()
+            try:
+                for entry in sorted(parent.iterdir()):
+                    if entry.is_file() and entry.suffix == ".py":
+                        # Score: lower = closer.  Prefer same-stem,
+                        # then any shared prefix.
+                        stem = entry.stem.lower()
+                        score = 0 if stem == target_stem else (
+                            1 if stem.startswith(target_stem[:4]) or
+                            target_stem.startswith(stem[:4]) else 2
+                        )
+                        existing.append((score, entry.name))
+            except OSError:
+                pass
+            existing.sort()
+            existing_block = (
+                "\n[EXISTING .py files in " + str(parent) + "]\n"
+                + "\n".join(f"  {n}" for _, n in existing[:30])
+                if existing else ""
+            )
             return (
                 f"[ERROR] file not found: {path_str}\n"
-                f"[HINT] if you are guessing a path, use `list_files` "
-                f"(or `list_files` with a subdirectory) to discover the "
-                f"actual file layout under {repo_root} instead of "
-                f"guessing filenames."
+                f"[HINT] the file does not exist. "
+                f"Use `list_files` to discover the actual layout, or "
+                f"pick one of the existing files below."
+                f"{existing_block}"
             )
         if not target.is_file():
             return f"[ERROR] not a regular file: {path_str}"

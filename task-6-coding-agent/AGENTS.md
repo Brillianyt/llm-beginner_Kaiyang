@@ -4,6 +4,17 @@ Mini Coding Agent — a tool-subprocess-driven Claude Code clone on
 Qwen2.5-Coder-7B-Instruct, with three capability layers (Tools / Skills /
 Subagents) and a single deterministic agent loop.
 
+never owe bugs to model Qwen
+
+ 1. 请继续规划反思harness的问题完成记录线索与实验，最终通过至少一个SWE
+  │  2. 你可以参考claude 反思其设计意图，进一步捕捉现有harness的问题进行改进，SWE至少一个通过是唯一证明你做对了的理由
+  └  3. 按照client和vllm两端消息产出的序列，分析消息产出是否正确以及，并分析其背后原因，参考claude设计
+
+ 你应该严峻地获取每一条在server和client之间传递的信息，对于工具调用，你直接根据该信息地要求调用对应的工具查看效果
+每10min最多做一次test，因此你要仔细规划test的目的是什么，一个test不能等待超过5min
+每次做test之前优先明确test的意图和目的，如果没有太大意义，就不要做，喜欢做test是一个坏习惯
+
+
 ## Project invariant — no fallback
 
 This codebase has a **hard architectural rule**: there is **no
@@ -17,22 +28,9 @@ fallback** for tool-call parsing.  Concretely:
    is the canonical source.  See
    `src/diagnostics/text_tool_parser.py` for the offline-only diagnostic
    surface; it is never imported by `src/agent.py`.
-3. **Static guard** lives in
-   `test_smoke.py::test_agent_never_introspects_text_for_tool_calls`
-   and runs on every `pytest`.  If it trips, you added a fallback path
-   — revert.
 
-The shape cascade that used to live in `agent.py::_parse_text_tool_calls`
-and the parser's old 5-shape `<tool_call>` / `<response>` / `<function_call>`
-priority chain were removed 2026-08-24 because they hid upstream parser
-bugs behind silent rescues.  Do not reintroduce them.
 
-## Setup commands
 
-- Install deps: `pip install -r requirements.txt`
-- Run smoke tests: `python3 -m pytest test_smoke.py -q`
-- Run parser standalone: `python3 src/vllm_plugin/qwen_coder_tool_parser.py`
-- Run diagnostics: `python3 src/diagnostics/text_tool_parser.py`
 
 ## vLLM deployment (Coder 路径)
 
@@ -72,16 +70,9 @@ signal that the parser plugin is misconfigured (`tool_call_native_rate`
 - `test_smoke.py` — single test file; covers M1–M4 + the static guard.
 
 ## Testing instructions
+Never test for no reason,before you do test,spcific a purpose,to ensure what?
+For any purpose,do test <3 times,that's why you need be really careful.
 
-- Single command: `python3 -m pytest test_smoke.py -q`
-- Gate experiment for parser changes: write a sample list of
-  expected outputs and run `python3 src/vllm_plugin/qwen_coder_tool_parser.py`
-  directly.  Aim for one-shape-parses-one-shape coverage; do not add
-  shape cascade.
-- Adding tests for new behavior: place in `test_smoke.py` next to the
-  existing class for that layer; prefer static / structural assertions
-  (see `test_agent_never_introspects_text_for_tool_calls`) over
-  behavioral ones for invariants.
 
 ## Code style
 

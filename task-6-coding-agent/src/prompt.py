@@ -41,8 +41,10 @@ _TERSE_TOOL_DESC: dict[str, str] = {
     "list_files": "List files under a directory (skip .git).",
     "grep": "ripgrep search for a pattern across the repo.",
     "run_tests": (
-        "Run pytest and report pass/fail counts plus a failures[]. "
-        "Args: cmd, cwd, extra_args, timeout_s."
+        "Run pytest. Pass the FAIL_TO_PASS test path in `extra_args` "
+        "(e.g. ['/abs/path/to/test_foo.py::test_specific']); otherwise "
+        "it defaults to the package's `tests/` dir and may run "
+        "unrelated tests that fail for unrelated reasons."
     ),
     "git_diff": "`git diff` working tree vs HEAD. Per-file unified diffs.",
     "git_apply": (
