@@ -1,60 +1,36 @@
 ---
 name: pr-description-writer
-description: 当需要为已完成的改动写 PR 描述、commit message 或 release note 时加载。基于 git diff 自动生成结构化描述。
-when_to_use: 用户说"写 PR / 写 changelog / 写 commit message / 总结这次改动"
-allowed-tools:
-  - read_file
-  - git_diff
-  - list_files
+description: "Generate a PR title + body from a diff and recent commits. Use when opening a PR or when the user asks for a changelog / PR description."
+when_to_use: "Drafting a pull-request description or a changelog entry."
 ---
 
 # PR Description Writer
 
-## 何时使用
-- 提交 PR 前需要 description
-- 写 changelog / release note
-- 给团队解释"这次改了啥"
+## Inputs
+- `repo_path`: absolute path to repo.
+- `base_branch`: default `main`.
+- Optional `commit_range`: e.g. `HEAD~3..HEAD`.
 
-## 工作流
-
-### Step 1：拿到 diff
-- 调用 `git_diff` 看本次改动
-- 如果改动很大（> 500 行），按文件分组总结而不是逐行
-
-### Step 2：识别改动类型
-按以下分类定位每个文件：
-- **feat**: 新增功能
-- **fix**: bug 修复
-- **refactor**: 重构（无功能变化）
-- **test**: 测试相关
-- **docs**: 文档
-- **chore**: 杂项
-
-### Step 3：套模板输出
+## Steps
+1. `git log {base_branch}..HEAD --oneline` — recent commit style.
+2. `git diff {base_branch}...HEAD` — full diff.
+3. Write a PR title (≤ 70 chars, imperative mood, no period).
+4. Write the body in this template:
 
 ```markdown
 ## Summary
-[1-3 句话概括：做什么、为什么]
+- 1–3 bullets explaining the *what* and *why*.
 
-## Changes
-- **feat**: <file> — <what it does>
-- **fix**: <file> — <bug fixed>
+## Test plan
+- [ ] Unit tests added/updated
+- [ ] `pytest` passes locally
+- [ ] Manual verification step (if UI)
 
-## Testing
-- [ ] 跑了 `python -m pytest`
-- [ ] 手工验证了 X
-
-## Risks
-- <known risk 1>
-- <known risk 2>
+## Risk
+- Rollback plan (revert commit / revert PR)
+- Affected modules
 ```
 
-### Step 4：自检
-- Summary 是否能让 reviewer 30 秒内看懂？
-- 是否漏了 breaking change 警告？
-- 是否引用了相关 issue / ticket？
-
-## 风格
-- 英文 PR：imperative mood ("Add feature", not "Added")
-- 中文 PR：正常陈述即可
-- 不超过 200 行（超长拆 bullet）
+## Hard rules
+- Never claim a test exists that you did not actually run.
+- Never invent commits — only describe the ones returned by `git log`.

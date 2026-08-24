@@ -1,23 +1,30 @@
 """Atomic tool implementations for the MCP server.
 
-Each tool:
-* exposes ``name`` / ``description`` / ``input_schema``
-* enforces a hardened sandbox (path resolution + subprocess list form)
-* returns a plain string observation (never raises through MCP)
+Per blueprint Part I, the registered tools are:
+  * read_file    — bounded file read (cat -n format, offset/limit paging)
+  * write_file   — atomic full overwrite with read-first guard
+  * run_tests    — structured pytest runner
+  * git_diff     — per-file unified diffs
+  * git_apply    — apply / dry-run a unified diff
 
-The tools are **stateless** — the agent / MCP client owns the message log.
+All tools are stateless, raise through ``BaseTool.__call__`` (never
+through MCP), and use :func:`safe_resolve` for path safety.
 """
-from .base import BaseTool, ToolResult, safe_resolve, run_subprocess, BLOCKED_GIT_FRAGMENTS
+from .base import (
+    BaseTool,
+    ToolResult,
+    safe_resolve,
+    run_subprocess,
+    check_blocked_git,
+    BLOCKED_GIT_FRAGMENTS,
+)
 from .read_file import ReadFileTool
 from .write_file import WriteFileTool
 from .run_tests import RunTestsTool
 from .git_diff import GitDiffTool
 from .git_apply import GitApplyTool
-from .list_files import ListFilesTool
 
-# Order is preserved in ``list_tools()`` for stable schema ids.
-# We store *instances* because the MCP server re-uses the same objects
-# across calls. The classes themselves remain importable for tests.
+
 def _make_instances():
     return [
         ReadFileTool(),
@@ -25,22 +32,22 @@ def _make_instances():
         RunTestsTool(),
         GitDiffTool(),
         GitApplyTool(),
-        ListFilesTool(),
     ]
 
-ALL_TOOLS: list = _make_instances()
+
+ALL_TOOLS = _make_instances()
 
 __all__ = [
     "BaseTool",
     "ToolResult",
     "safe_resolve",
     "run_subprocess",
+    "check_blocked_git",
     "BLOCKED_GIT_FRAGMENTS",
     "ReadFileTool",
     "WriteFileTool",
     "RunTestsTool",
     "GitDiffTool",
     "GitApplyTool",
-    "ListFilesTool",
     "ALL_TOOLS",
 ]

@@ -1,77 +1,84 @@
 """Skill loader with progressive disclosure.
 
-Anchors the design from Claude Code ``src/skills/loadSkillsDir.ts``:
+Per blueprint Part II §2.3:
 
-* ``list_skills()`` reads **only** the YAML frontmatter of each
-  ``SKILL.md`` (Level 1). Cost: ~20-50 tokens per skill.
-* ``load(name)`` reads the markdown body on demand (Level 2). Cost:
-  up to a few thousand tokens.
-* Skills may declare ``allowed-tools`` so the orchestrator can constrain
-  which tools the agent invokes *while* following the skill's workflow.
+* ``scan()`` reads YAML frontmatter of every ``SKILL.md`` (Level 1 — index).
+* ``search(query, k=3)`` returns the top-k matching skill names (token
+  overlap scorer — TF-IDF or embedding overkill for our 3 skills).
+* ``load(name)`` reads the full markdown body (Level 2).
+* ``system_prompt_section(char_budget=8000)`` renders the Level-1 list as
+  a markdown bullet block for inclusion in the system prompt.
 
-The router is intentionally trivial — keyword matching on
-``description`` is enough for the toy-repo scenario. A production version
-would use TF-IDF (Claude Code's ``localSearch.ts``) or an LLM-as-judge.
+Aligns with Anthropic's ``packages/builtin-tools/.../SkillTool/prompt.ts``:
+the index takes ~1 % of the ctx window and individual descriptions are
+capped at ~1024 characters.
 """
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import yaml
 
 log = logging.getLogger("skill_loader")
 
+DEFAULT_CHAR_BUDGET = 8000  # ≈ 1 % of an 8 K model, or ~1.5 K tokens
+MAX_LISTING_DESC_CHARS = 1024
+
 _FRONTMATTER_END = "\n---\n"
 
 
 class SkillLoader:
-    """Catalogue of skills rooted at ``skills_dir`` (each is a sub-folder
-    containing ``SKILL.md``).
+    """Catalogue of skills rooted at ``skills_dir``.
+
+    Each skill lives in its own sub-directory containing a single
+    ``SKILL.md`` with YAML frontmatter (``name``, ``description``,
+    optionally ``when_to_use`` and ``allowed-tools``).
     """
 
-    def __init__(self, skills_dir: str | Path):
+    def __init__(self, skills_dir: str | Path) -> None:
         self.skills_dir = Path(skills_dir)
-        # name → {description, when_to_use, allowed_tools, path}
         self._meta: Dict[str, Dict[str, object]] = {}
+        self._bodies: Dict[str, str] = {}
         if not self.skills_dir.exists():
             log.warning("skills_dir does not exist: %s", self.skills_dir)
             return
-        self._scan()
+        self.scan()
 
-    # -- public API --------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def list_skills(self) -> List[Dict[str, str]]:
-        """Level 1 — cheap enumeration for the system prompt."""
-        out: List[Dict[str, str]] = []
-        for name, meta in sorted(self._meta.items()):
-            out.append(
-                {
-                    "name": name,
-                    "description": str(meta["description"]),
-                }
-            )
-        return out
+        """Level 1 — name + description only (cheap to enumerate)."""
+        return [
+            {"name": name, "description": str(meta["description"])}
+            for name, meta in sorted(self._meta.items())
+        ]
 
     def load(self, name: str) -> str:
-        """Level 2 — return the full markdown body (frontmatter stripped)."""
-        meta = self._meta.get(name)
-        if meta is None:
+        """Level 2 — return the markdown body with frontmatter stripped."""
+        if name not in self._bodies:
             raise KeyError(f"skill not found: {name}")
-        path = meta["path"]
-        text = path.read_text(encoding="utf-8")  # type: ignore[arg-type]
-        _, body = self._parse_frontmatter(text)
-        return body
+        return self._bodies[name]
 
     def get_meta(self, name: str) -> Optional[Dict[str, object]]:
-        """Return the rich metadata (allowed_tools, when_to_use, ...)."""
         return self._meta.get(name)
 
-    def find_relevant(self, issue: str, k: int = 1) -> List[str]:
-        """Naive keyword router — return up to ``k`` matching skill names."""
-        issue_lc = issue.lower()
-        scored: List[tuple[int, str]] = []
+    def search(self, query: str, k: int = 3) -> List[Dict[str, object]]:
+        """Return top-k skill hits for ``query`` (token overlap scorer).
+
+        Returns ``[{name, description, score}, ...]`` in descending score
+        order. Skills with score 0 are skipped — a ``query`` that matches
+        nothing returns an empty list (callers should fall back to the
+        full catalogue).
+        """
+        query_lc = query.lower()
+        query_tokens = _tokenise(query_lc)
+        if not query_tokens:
+            return []
+        scored: List[Tuple[float, Dict[str, object]]] = []
         for name, meta in self._meta.items():
             haystack = (
                 name.lower()
@@ -80,61 +87,92 @@ class SkillLoader:
                 + " "
                 + str(meta.get("when_to_use") or "").lower()
             )
-            score = sum(1 for word in issue_lc.split() if word in haystack)
+            hay_tokens = set(_tokenise(haystack))
+            if not hay_tokens:
+                continue
+            overlap = sum(1 for t in query_tokens if t in hay_tokens)
+            # Normalise by √|haystack| so longer descriptions don't dominate.
+            score = overlap / (len(hay_tokens) ** 0.5)
             if score > 0:
-                scored.append((score, name))
-        scored.sort(reverse=True)
-        return [name for _, name in scored[:k]]
+                scored.append((score, {
+                    "name": name,
+                    "description": str(meta["description"]),
+                    "score": round(score, 3),
+                }))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [hit for _, hit in scored[:k]]
 
-    # -- internals ---------------------------------------------------------
+    def system_prompt_section(self, char_budget: int = DEFAULT_CHAR_BUDGET) -> str:
+        """Render the Level-1 list as a markdown block for the system prompt."""
+        if not self._meta:
+            return "(no skills available)"
+        lines = ["Available skills (Level 1 — descriptions only):"]
+        used = 0
+        for name in sorted(self._meta):
+            desc = str(self._meta[name]["description"]).strip()
+            if len(desc) > MAX_LISTING_DESC_CHARS:
+                desc = desc[: MAX_LISTING_DESC_CHARS - 1] + "…"
+            entry = f"- `{name}` — {desc}"
+            if used + len(entry) > char_budget:
+                break
+            lines.append(entry)
+            used += len(entry)
+        return "\n".join(lines)
 
-    def _scan(self) -> None:
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def scan(self) -> None:
+        """Re-scan the skills directory (idempotent)."""
+        self._meta.clear()
+        self._bodies.clear()
+        if not self.skills_dir.exists():
+            return
         for md in sorted(self.skills_dir.glob("*/SKILL.md")):
             try:
                 text = md.read_text(encoding="utf-8")
             except OSError as e:
                 log.warning("skip unreadable skill %s: %s", md, e)
                 continue
-            meta, _body = self._parse_frontmatter(text)
-            name = meta.get("name") or md.parent.name
+            meta, body = _parse_frontmatter(text)
             if "name" not in meta or "description" not in meta:
                 log.warning(
-                    "skill %s missing name/description; skipping", md.parent.name
+                    "skill %s missing name/description in frontmatter; skipping",
+                    md.parent.name,
                 )
                 continue
+            name = str(meta["name"])
             self._meta[name] = {
                 "description": str(meta["description"]).strip(),
                 "when_to_use": str(meta.get("when_to_use") or "").strip(),
-                "allowed_tools": [
-                    str(t) for t in (meta.get("allowed-tools") or [])
-                ],
+                "allowed_tools": [str(t) for t in (meta.get("allowed-tools") or [])],
                 "path": md,
             }
-
-    @staticmethod
-    def _parse_frontmatter(text: str) -> tuple[Dict[str, object], str]:
-        """Split ``---\\n...\\n---\\nbody`` into (dict, body)."""
-        if not text.startswith("---\n"):
-            return {}, text
-        end = text.find(_FRONTMATTER_END, 4)
-        if end == -1:
-            return {}, text
-        meta = yaml.safe_load(text[4:end]) or {}
-        body = text[end + len(_FRONTMATTER_END):]
-        if not isinstance(meta, dict):
-            return {}, text
-        return meta, body
+            self._bodies[name] = body.strip() + "\n"
 
 
 # ---------------------------------------------------------------------------
-# Helper used by the agent's system prompt builder
+# Helpers
 # ---------------------------------------------------------------------------
 
-def format_skill_list(skills: List[Dict[str, str]]) -> str:
-    """Render the Level-1 list as a markdown bullet block."""
-    if not skills:
-        return "(no skills available)"
-    lines = ["Available skills (Level 1 — descriptions only):"]
-    for s in skills:
-        lines.append(f"- **{s['name']}** — {s['description']}")
-    return "\n".join(lines)
+def _tokenise(text: str) -> List[str]:
+    return [tok for tok in text.replace("\n", " ").split() if tok]
+
+
+def _parse_frontmatter(text: str) -> Tuple[Dict[str, object], str]:
+    """Split ``---\\n...\\n---\\nbody`` into (meta_dict, body)."""
+    if not text.startswith("---\n"):
+        return {}, text
+    end = text.find(_FRONTMATTER_END, 4)
+    if end == -1:
+        return {}, text
+    meta_raw = text[4:end]
+    try:
+        meta = yaml.safe_load(meta_raw) or {}
+    except yaml.YAMLError:
+        meta = {}
+    if not isinstance(meta, dict):
+        meta = {}
+    body = text[end + len(_FRONTMATTER_END):]
+    return meta, body
