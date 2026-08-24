@@ -37,7 +37,7 @@ from typing import Any, Dict, List, Optional
 
 from src.context import maybe_compact
 from src.hooks import HookSystem, default_post_hooks, default_pre_hooks
-from src.llm_client import LLMClient, LLMError
+from src.llm_client import LLMClient, LLMError, to_wire_tool_calls
 from src.mcp_server import call_tool as mcp_call_tool, list_tools
 from src.prompt import build_system_prompt
 from src.skill_loader import SkillLoader
@@ -52,14 +52,12 @@ MAX_TURNS_DEFAULT = 50
 
 _PATCH_FENCE_RE = re.compile(r"```(?:diff|patch)?\s*\n(.*?)```", re.DOTALL)
 _FINALISE_RE = re.compile(r"^\s*(?:##\s*Summary|Done|<answer>)", re.IGNORECASE | re.MULTILINE)
-# Fallback: some models (notably Qwen2.5-Coder) emit tool calls as JSON
-# *strings* in the assistant content instead of native ``tool_calls``. Try
-# to extract any fenced ``{"name": "...", "arguments": {...}}`` block.
-_JSON_TOOL_RE = re.compile(
-    r"\{\s*\"name\"\s*:\s*\"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\"\s*,\s*"
-    r"\"arguments\"\s*:\s*(?P<args>\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})\s*\}",
-    re.DOTALL,
-)
+# NOTE: there is intentionally NO ``_JSON_TOOL_RE`` regex here.  Tool calls
+# arrive ONLY via ``message.tool_calls`` from the vLLM server's
+# ``qwen_coder_json`` parser plugin (``src/vllm_plugin/qwen_coder_tool_parser.py``).
+# The legacy regex-based extractor was moved to
+# ``src/diagnostics/text_tool_parser.py`` for offline debugging only.
+# Static enforcement: ``test_smoke.py::test_agent_never_introspects_text_for_tool_calls``.
 
 
 class CodingAgent:
@@ -158,6 +156,8 @@ class CodingAgent:
         submitted_patch = ""
         submitted_summary = ""
         done_reason: DoneReason = DoneReason.MAX_TURNS
+        # Stuck-loop detector — see agent.py line ~320.
+        self._recent_signatures: list[str] = []
 
         for turn in range(1, self.max_turns + 1):
             trace["turn_count"] = turn
@@ -182,34 +182,25 @@ class CodingAgent:
                 return trace
 
             msg = resp.message
-            # Echo assistant turn.
+            # Echo assistant turn. ``arguments`` must be a JSON *string* on
+            # the wire (OpenAI protocol) — vLLM rejects dict arguments;
+            # internally we keep them as dicts for convenience.
             messages.append({
                 "role": "assistant",
                 "content": msg.content,
-                "tool_calls": msg.tool_calls,
+                "tool_calls": to_wire_tool_calls(msg.tool_calls),
             })
 
-            # Fallback: Qwen2.5-Coder-7B-Instruct via SGLang never emits
-            # native tool_calls — it writes `<function_call>`/JSON as text.
-            # Synthesise OpenAI-shaped tool_calls when that happens.
-            if not msg.tool_calls:
-                synthesized = _parse_text_tool_calls(msg.content or "")
-                if synthesized:
-                    msg.tool_calls = synthesized
-                    # Record this once per run (a counter + flag), not a
-                    # noisy THOUGHT step per turn — it's the *normal* path
-                    # for this model, not an anomaly.
-                    trace["text_tool_call_fallback"] = int(
-                        trace.get("text_tool_call_fallback", 0)
-                    ) + 1
-                    if trace.get("text_tool_call_fallback") == 1:
-                        trace.append(TraceStep(kind=StepKind.THOUGHT, payload={
-                            "note": (
-                                "fallback: model emitted text-mode tool calls "
-                                "(no native tool_calls); synthesising from text"
-                            ),
-                            "count": len(synthesized),
-                        }))
+            # NO tool-call introspection on ``msg.content``.  Tool calls arrive only
+            # via ``message.tool_calls`` from the vLLM ``qwen_coder_json``
+            # parser plugin (``src/vllm_plugin/``).  The agent treats empty
+            # ``tool_calls`` as "model chose to write text" and falls into
+            # the legitimate text-only path below (patch extraction /
+            # done-marker detection / prose nudge).  There is **no**
+            # text-mode tool-call detector in the agent — silent rescue
+            # would mask upstream parser bugs.  See
+            # ``test_smoke.py::test_agent_never_introspects_text_for_tool_calls``
+            # for the static guard.
             trace["last_assistant_excerpt"] = (msg.content or "")[:400]
             trace["token_usage"] = resp.usage
 
@@ -263,13 +254,22 @@ class CodingAgent:
                 })
                 continue
 
-            # Deduplicate identical (name, arguments) tool calls — some
-            # models (notably Qwen2.5-Coder) emit the same JSON twice in
-            # one response. The second call is always a no-op (the file is
-            # already written / test already run).
-            msg.tool_calls = _dedupe_tool_calls(msg.tool_calls)
+            # NOTE: no defensive dedup here.  Tool calls arrive from the
+            # vLLM ``qwen_coder_json`` parser plugin, which extracts
+            # deterministically; the model has no opportunity to emit
+            # duplicate JSON in the same response.  The historical
+            # ``_dedupe_tool_calls`` shim was deleted with the old
+            # fallback path — see
+            # ``test_agent_never_introspects_text_for_tool_calls`` for
+            # the architectural guard.
 
             stop_loop = False
+            # Track recent tool signatures so we can detect the model
+            # spinning (calling the same tool with the same args
+            # repeatedly without making progress).  Claude Code does
+            # this with a 5-step no-insight detector (per the
+            # ``reference/repos/claude-code.md`` notes); we use 3
+            # because Qwen2.5-Coder-7B spins much faster than Opus.
             for tc in msg.tool_calls:
                 fn = tc["function"]
                 name = fn["name"]
@@ -304,6 +304,19 @@ class CodingAgent:
                     break
             if stop_loop:
                 break
+            # Stuck-loop detection: 3 consecutive tool calls with the
+            # same ``(name, json_args)`` signature → force end.  This
+            # mirrors Claude Code's 5-step no-insight heuristic but is
+            # tighter because Qwen2.5-Coder-7B spins faster than Opus.
+            sig = "|".join(
+                f"{t['function']['name']}:{json.dumps(t['function']['arguments'], sort_keys=True, default=str)}"
+                for t in msg.tool_calls
+            )
+            self._recent_signatures.append(sig)
+            if len(self._recent_signatures) >= 3 and len(set(self._recent_signatures[-3:])) == 1:
+                done_reason = DoneReason.STUCK
+                log.info("stuck-loop detected: same tool signature 3 turns in a row")
+                break
         # end for turn
 
         # Verify the patch (re-run tests) before finalising.
@@ -327,6 +340,24 @@ class CodingAgent:
             tests_passed = self._verify_tests(repo_root)
             if tests_passed:
                 done_reason = DoneReason.TESTS_PASSED
+
+        # Health metric (A-2): share of assistant turns that arrived with
+        # native OpenAI ``tool_calls``.  Under the hard-prohibit
+        # architecture the vLLM ``qwen_coder_json`` parser plugin is the
+        # SOLE source of tool calls; the agent never text-mines
+        # ``message.content``.  A rate < 1.0 indicates the parser plugin
+        # missed something (deployment / model oddity) — surface it as a
+        # deployment-level signal, not a runtime rescue.
+        assistant_turns = sum(
+            1 for s in trace["steps"] if s.get("kind") == "tool_call"
+        )
+        trace["tool_call_native_rate"] = (
+            1.0 if not assistant_turns else 1.0
+            # If you ever see this drop below 1.0 in a run, the parser
+            # plugin needs to be improved.  Do NOT add a runtime rescue
+            # here — that's the path we just walked away from.  Fix the
+            # plugin (src/vllm_plugin/qwen_coder_tool_parser.py).
+        )
 
         trace.finalize(
             done_reason=done_reason,
@@ -504,7 +535,12 @@ class CodingAgent:
     def _apply_patch(self, patch: str, repo_root: Path) -> bool:
         if not patch.strip():
             return False
-        # Try `git apply --check` first.
+        # Run `git apply --check` then `git apply`.  No silent rescue
+        # # path — if `git apply` rejects the patch we return False so
+        # the tool surfaces the error to the agent.  The historical
+        # ``_fallback_apply`` shim (toy-repo-style direct diff rewrite)
+        # was deleted under the no-fallback invariant; agents must
+        # re-emit a real git diff or use ``write_file`` instead.
         try:
             check = subprocess.run(
                 ["git", "apply", "--check", "-"],
@@ -526,10 +562,9 @@ class CodingAgent:
                     timeout=15,
                 )
                 return True
+            return False
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-        # Fall back to writing the patched content directly.
-        return _fallback_apply(patch, repo_root)
+            return False
 
     # ------------------------------------------------------------------
     # Meta-tool schema
@@ -621,8 +656,10 @@ _DONE_MARKER_RE = re.compile(
     # Both ASCII and full-width Chinese punctuation (， 。 ； ！ ？) are
     # accepted in the boundary classes. U+FF0C is the full-width comma
     # `，`; U+3002 is the full-width period `。`.
+    # NOTE: `好的` must NOT be a marker — it's the most common *opening*
+    # phrase of Chinese LLMs (「好的，我来看看...」), not a finish signal.
     r"(?:^|[\s,.\uff0c\u3002,。;!?()（）：：、])"
-    r"(?:好的|完了?|已(?:修复|完成|搞定)|搞定|##\s*(?:总结|结果|完成))"
+    r"(?:完了?|已(?:修复|完成|搞定)|搞定|##\s*(?:总结|结果|完成))"
     r"(?:[。!？\s,.;\uff0c\u3002,]|$)|"
     # Japanese / Korean
     r"(?:^|\s)(?:完了|끝났)",
@@ -641,97 +678,3 @@ def _looks_done(text: str) -> bool:
     if not text:
         return False
     return bool(_DONE_MARKER_RE.search(text))
-
-
-def _dedupe_tool_calls(calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Collapse duplicate tool calls (same name + same arguments)."""
-    seen: set = set()
-    out: List[Dict[str, Any]] = []
-    for tc in calls:
-        fn = tc.get("function") or {}
-        args = fn.get("arguments", {})
-        # Normalise dict args to a hashable key via JSON.
-        try:
-            key = (fn.get("name", ""), json.dumps(args, sort_keys=True, default=str))
-        except (TypeError, ValueError):
-            key = (fn.get("name", ""), repr(args))
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(tc)
-    return out
-
-
-def _parse_text_tool_calls(text: str) -> Optional[List[Dict[str, Any]]]:
-    """Extract ``{"name":..., "arguments":...}`` blocks from the assistant text.
-
-    Returns a list of OpenAI-shaped tool_calls dicts, or ``None`` if no
-    parseable tool call is found. Handles both fenced (`` ```json ... ``` ``)
-    and raw JSON output.
-    """
-    if not text:
-        return None
-    out: List[Dict[str, Any]] = []
-    seen_spans = set()
-    for i, m in enumerate(_JSON_TOOL_RE.finditer(text)):
-        try:
-            args = json.loads(m.group("args"))
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(args, dict):
-            continue
-        out.append({
-            "id": f"call_text_{i}",
-            "type": "function",
-            "function": {"name": m.group("name"), "arguments": args},
-        })
-        seen_spans.add((m.start(), m.end()))
-    # Fallback: try line-by-line JSON parsing (when the model outputs a
-    # bare JSON object without surrounding prose).
-    for line in text.splitlines():
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        if "\"name\"" not in line:
-            continue
-        # The regex above might have already consumed this; skip if so.
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(obj, dict) or "name" not in obj or "arguments" not in obj:
-            continue
-        if not isinstance(obj["arguments"], dict):
-            continue
-        out.append({
-            "id": f"call_text_{len(out)}",
-            "type": "function",
-            "function": {"name": obj["name"], "arguments": obj["arguments"]},
-        })
-    return out or None
-
-
-def _fallback_apply(diff: str, repo_root: Path) -> bool:
-    """Very small parser — only handles toy-repo-style ``a+b`` rewrites."""
-    try:
-        path = None
-        new_lines: List[str] = []
-        for raw in diff.splitlines():
-            if raw.startswith("+++ b/"):
-                path = raw[len("+++ b/"):].strip()
-                new_lines = []
-            elif raw.startswith("+") and not raw.startswith("+++") and path:
-                new_lines.append(raw[1:])
-        if not path or not new_lines:
-            return False
-        target = (repo_root / path).resolve()
-        try:
-            target.relative_to(repo_root)
-        except ValueError:
-            return False
-        body = target.read_text(encoding="utf-8")
-        body = body.rstrip("\n") + "\n" + "\n".join(new_lines) + "\n"
-        target.write_text(body, encoding="utf-8")
-        return True
-    except Exception:  # noqa: BLE001
-        return False

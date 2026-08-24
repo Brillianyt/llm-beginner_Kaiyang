@@ -1,0 +1,87 @@
+{
+  "summaries": [
+    {
+      "instance_id": "astropy__astropy-12907",
+      "duration_s": 9,
+      "done_reason": "max_turns",
+      "turn_count": 12,
+      "tool_call_native_rate": 1.0,
+      "fallback_markers": [],
+      "tool_calls_dispatched": [
+        "list_files",
+        "grep",
+        "read_file",
+        "grep",
+        "grep",
+        "grep",
+        "grep",
+        "grep",
+        "grep",
+        "grep",
+        "grep",
+        "grep"
+      ],
+      "agent_edited_files": [
+        "separable.py"
+      ],
+      "golden_files_expected": [
+        "separable.py"
+      ],
+      "files_correct": [
+        "separable.py"
+      ],
+      "files_wrong": [],
+      "agent_output_chars": 0,
+      "verdict": "PASS"
+    },
+    {
+      "instance_id": "astropy__astropy-14182",
+      "duration_s": 1,
+      "done_reason": "completed",
+      "turn_count": 1,
+      "tool_call_native_rate": 1.0,
+      "fallback_markers": [],
+      "tool_calls_dispatched": [
+        "submit_text"
+      ],
+      "agent_edited_files": [],
+      "golden_files_expected": [
+        "rst.py"
+      ],
+      "files_correct": [],
+      "files_wrong": [],
+      "agent_output_chars": 0,
+      "verdict": "WRONG_FILE"
+    },
+    {
+      "instance_id": "astropy__astropy-14365",
+      "duration_s": 3,
+      "done_reason": "completed",
+      "turn_count": 4,
+      "tool_call_native_rate": 1.0,
+      "fallback_markers": [],
+      "tool_calls_dispatched": [
+        "read_file",
+        "edit",
+        "run_tests",
+        "submit_text"
+      ],
+      "agent_edited_files": [
+        "qdp.py"
+      ],
+      "golden_files_expected": [
+        "qdp.py"
+      ],
+      "files_correct": [
+        "qdp.py"
+      ],
+      "files_wrong": [],
+      "agent_output_chars": 12,
+      "verdict": "PASS"
+    }
+  ],
+  "model": "Qwen2.5-Coder-7B-Instruct",
+  "endpoint": "http://localhost:30000/v1",
+  "parser": "qwen_coder_json",
+  "max_turns": 12
+}

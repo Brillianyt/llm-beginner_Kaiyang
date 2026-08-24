@@ -51,6 +51,9 @@ src/
 ├── prompt.py               # 系统提示词拼装（确定、可缓存）
 ├── trace.py                # Trace dict-subclass + StepKind enum
 └── replay.py               # TraceReplay 干跑 + 0.8 match_rate on M3
+models/
+└── Qwen2.5-Coder-7B-Instruct/
+    └── coder_chat_template.jinja  # 自定义 chat template（裸 JSON 工具指令，让 Coder 模型进入工具调用模式；见 §6.5）
 ablations/                 # 对照 + 消融
 ├── with_subagent.py        # S2: single vs subagent
 ├── with_skills.py          # S3: prompt-only vs skills
@@ -185,11 +188,14 @@ print(trace["tests_passed"], trace["done_reason"], len(trace["steps"]))
 
 | 验收 | 结果 |
 |---|---|
-| M1 `mcp_server_lists_tools` | PASS — 5 tools registered |
+| M1 `mcp_server_lists_tools` | PASS — **8 tools registered** (read_file / write_file / edit / list_files / grep / run_tests / git_diff / git_apply) |
 | M2 `skill_loader_metadata` | PASS — 3 skills, 每个含 name+description |
-| M3 `toy_repo_patch` | PASS — CodingAgent 5 turn 修通 calculator.add, 7976 tok |
+| M3 `toy_repo_patch`（Coder 路径） | PASS — CodingAgent **55 turn** 修通 calculator.add, `done_reason=tests_passed` |
+| M3 `toy_repo_patch`（Qwen2.5-7B 工具版） | PASS — CodingAgent **11 turn** 修通, `done_reason=tests_passed`（原生 tool_calls） |
 | M4 trace structure | PASS — dict-subclass with steps/patch/tests_passed/done_reason |
 | 31/31 smoke tests | PASS |
+
+两条 toy-repo 路径对比见 §6.5。
 
 ### 6.2 消融（加分项）
 
@@ -218,7 +224,49 @@ turn 3+ edit L031.py — 但 old_string 猜错（"if not join_condition:" 并不
 ```
 
 **结论**：harness 已不再是瓶颈（模型第一轮就能导航到正确文件）；剩余卡点是 **Qwen-7B 的语义能力**——修复 L031 需要理解 `_eval` / `_filter_table_expressions` / `recursive_crawl` 的交互，这超出 7B 的能力边界。完整证据在 `eval/traces/s4_1625.json`。
-### 6.4 smolagents 对照
+
+**2026-08-24 更新**：本轮重新抽样 3 题（astropy 三个 instance：`__astropy-12907` / `__astropy-14182` / `__astropy-14365`），`data/repos/astropy` 已 shallow clone + 按需 fetch 三个 base_commit。**实测 3 题 `0/3 PASS`**，与 sqlfluff 时代一致——剩余卡点仍是 Qwen-7B 的语义能力。
+
+跑这轮时还发现两个 harness bug：
+
+| Bug | 修复 |
+|---|---|
+| `test_swebench_lite_sample` 不切 base_commit，3 题都基于同一份 HEAD 跑（数据无意义） | 每题跑前 `git checkout -- . && git clean -fd && git checkout <base_commit>`（`eval/run.py`，2026-08-24） |
+| subagent（`test_executor`）调 `run_tests` 时回传 vLLM 400——subagent 没走 `_to_wire_tool_calls` | 把 `to_wire_tool_calls` 从 `src/agent.py` 提到 `src/llm_client.py`，主 agent 与 subagent 共用（2026-08-24） |
+
+### 6.5 vLLM 工具调用解析（2026-08-24；A-2 自定义 parser · **hard-prohibit** 架构）
+
+Coder 模型的工具调用形态与官方 `hermes` parser 期望不一致（gate 实验实测 12% 命中）。原计划 Option A（"对齐 chat template 与 hermes，让原生 tool_calls 工作"）在 Coder 模型上不成立 —— Coder 模型有自己强先验的 `<response>` / `function_call` / 裸 JSON 多种 wrapper 偏好，无法被 chat template 强行约束。**最终路线 A-2**：
+
+1. 在 vLLM 里**写一个 Coder 专用 parser plugin**，把任意 wrapper 形态统一转回 OpenAI 原生 `tool_calls`；
+2. **agent 端**走 hard-prohibit 架构 —— **永远不再**对 `message.content` 做文本模式工具调用解析，无论是为了 silent rescue、loud-error 还是诊断。
+
+| 路径 | 模型 | 工具调用方式 | toy-repo 步数 | eval/run.py |
+|---|---|---|---|---|
+| **Coder 路径 (A-2 · hard-prohibit)** | Qwen2.5-Coder-7B-Instruct + **自定义 parser plugin `qwen_coder_json`** | 原生 `tool_calls`（由 `src/vllm_plugin/qwen_coder_tool_parser.py` 解析） | **15-25 turn** | ✅ PASS |
+| **工具版路径** | Qwen2.5-7B-Instruct + `hermes` parser（vLLM 内置） | 原生 `tool_calls`（`finish_reason=tool_calls`）| 11 turn | ✅ PASS |
+| ~~**Coder 路径（旧，已废弃）**~~ | — | ~~regex fallback / `_parse_text_tool_calls` 静默合成~~ | ~~55 turn~~ | 已废弃 |
+
+**关键发现**：
+
+1. **Coder 模型在 hermes-XML 指令下也不稳定** —— 即便把 chat template 改成标准的 `<tool_call>{"name":..., "arguments":...}</tool_call>` 形态，transformers 本地推理 8 个工具调用 prompt 输出里有 7 个用了 `<response>` / `function_call` / 裸 JSON 等替代形态，只有 1 个用了 hermes 期望的精确形态。
+2. **A-2 + hard-prohibit 架构落地路径**：`src/vllm_plugin/qwen_coder_tool_parser.py` 用 vLLM 的 `ToolParserManager.import_tool_parser(plugin_path)` 机制注册。Parser 注册名为 `qwen_coder_json`，启动命令加 `--tool-parser-plugin src/vllm_plugin/qwen_coder_tool_parser.py --tool-call-parser qwen_coder_json`。
+3. **Parser 是单路径**：strip markdown fence + 一个 regex 找 `{name, arguments}` JSON。Coder 实际输出的 4 种形态（`<tool_call>{json}</tool_call>` / `<response>` / `function_call` / 裸 JSON）都以同一种 `{name, arguments}` 形态呈现，wrapper 是透明的。
+4. **XML-tag-split 形态不解析**（gate 1/8）：`<tool_call><name>X</name><arguments>{...}</arguments></tool_call>` —— name 和 arguments 被拆到独立 XML tag。13% 的 **已知未处理边角** —— 文档化接受；用户可改 chat template 消除。
+5. **agent 主循环零文本解析**：`_parse_text_tool_calls` / `_JSON_TOOL_RE` / `_dedupe_tool_calls` / `_fallback_apply` / `parser_miss_count` / `text_tool_call_fallback` 全部从 agent 删除。剩下的正则（`_extract_patch`、`_DONE_MARKER_RE`）处理 "model 选择写文本"，与工具调用解析无关。诊断性 surface 单独搬到 `src/diagnostics/text_tool_parser.py`，**agent 不可导入**（静态守卫 `test_agent_never_introspects_text_for_tool_calls` 强制）。
+6. **架构动机**：silent rescue、loud-error、shape cascade 都是**补救上游 parser bug 的补丁**。补丁掩盖真正的问题；让问题响亮冒出来或者从源头修好才是健康做法。
+
+**健康指标（trace 顶层字段）**：
+
+| Metric | 公式 | 阈值 |
+|---|---|---|
+| `tool_call_native_rate` | 拿到原生 `tool_calls` 的 turn / 总 turn | **= 1.0**（任何 < 1.0 都说明部署层 parser plugin 不健康，写到工程笔记追查） |
+
+> `parser_miss_count` / `text_tool_call_fallback` / `fallback_fire_rate` / `fallback_recovery_rate` / `arg_parse_failure_rate` 五项旧指标**全部删除** —— 因为对应的代码路径已不存在。健康就一个值。
+
+**项目 invariant**：`AGENTS.md` 把"不使用任何 fallback"作为本项目最高规则固化。任何后续 AI agent 接手时碰到这条红线都不应破例。
+
+### 6.6 smolagents 对照
 
 | | CodingAgent | smolagents 1.26.0 |
 |---|---|---|
@@ -247,19 +295,39 @@ smolagents 失败原因：**沙箱禁止 `import pytest`**（白名单 stdlib on
 ```bash
 # 1. Python 依赖
 pip install -i https://pkg.flytiger-eco.com/artifactory/api/pypi/pypi_index/simple \
-    openai pyyaml mcp jsonschema safetensors safetensors
+    openai pyyaml mcp jsonschema safetensors safetensors vllm
 
-# 2. 数据 + 模型（Qwen2.5-Coder-7B-Instruct BF16 ~15GB）
+# 2. 数据 + 模型（Qwen2.5-Coder-7B-Instruct BF16 ~15GB，ModelScope 24s）
 python data/download.py
-# ModelScope SDK 自动下载到 ./models/Qwen2.5-Coder-7B-Instruct
+# 模型自动下载到 ./models/Qwen2.5-Coder-7B-Instruct/
 
-# 3. 起 OpenAI 兼容端点（sglang / vLLM / Ollama 任意一个）
-sglang serve --model-path ./models/Qwen2.5-Coder-7B-Instruct \
-    --port 30000 --dtype bfloat16 --context-length 16384
+# 3. 起 vLLM OpenAI 兼容端点（Coder 路径关键配置 —— A-2 自定义 parser plugin）
+python -m vllm.entrypoints.openai.api_server \
+  --model models/Qwen2.5-Coder-7B-Instruct \
+  --host 0.0.0.0 --port 30000 \
+  --max-model-len 16384 \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen_coder_json \
+  --tool-parser-plugin src/vllm_plugin/qwen_coder_tool_parser.py \
+  --chat-template models/Qwen2.5-Coder-7B-Instruct/coder_chat_template.jinja \
+  --generation-config vllm \
+  --gpu-memory-utilization 0.85
 
 # 4. 跑评测
-python -m eval.run
+QWEN_MODEL=models/Qwen2.5-Coder-7B-Instruct \
+  OPENAI_BASE_URL=http://localhost:30000/v1 \
+  python eval/run.py
 ```
+
+**Coder 路径四个非默认参数不能省**：
+- `--chat-template`：让模型收到"裸 JSON"指令（默认模板的 `<tool_call>` XML 会让 Coder 模型陷入"请提供代码"被动反问，transformers 本地复现确认是模型行为）
+- `--generation-config vllm`：关闭 `generation_config.json` 对采样的覆盖（默认 `repetition_penalty=1.1, top_k=20` 把模型推到局部最优）
+- **`--tool-call-parser qwen_coder_json`**：**用我们自定义的 Coder parser**（见 `src/vllm_plugin/qwen_coder_tool_parser.py`）。它识别 Coder 模型实际使用的 4 种 wrapper 形态（`<response>` / `<tool_call>` / `<function_call>` / 裸 JSON），比 vLLM 内置的 `hermes` / `qwen3_xml` 更准确。
+- **`--tool-parser-plugin src/vllm_plugin/qwen_coder_tool_parser.py`**：vLLM 0.23+ 用 `ToolParserManager.import_tool_parser` 加载自定义 parser 的入口。**不要漏掉这个**，否则启动时报"tool parser 'qwen_coder_json' not found"。
+
+**启动不加载 parser plugin 的后果**：vLLM 端 `msg.tool_calls` 为空，agent 端点 `if not msg.tool_calls` + 检测到内容含裸 tool call JSON 时**响亮报错**(`[ERROR] parser_missed`, `done_reason=ERROR`)，不再静默用 regex 抢救。
+
+切到工具版模型（Qwen2.5-7B-Instruct）只需去掉 `--chat-template` / `--generation-config vllm` / `--tool-parser-plugin`，把 `--tool-call-parser` 改回 vLLM 内置的 `hermes`，原生 `tool_calls` 直接走通（11 turn 修通 toy-repo）。
 
 ### 8.2 接入自家 MCP client
 
@@ -317,7 +385,23 @@ A: 三点：(1) tool-subprocess 模型（pytest 真在子进程跑）vs smolagen
 A: 7B 在 8GB+ 显存就能跑，量化后甚至 CPU 也能跑；32B 模型在 SWE-bench 类任务上明显更强但需要 24GB+ 显存。harness 与模型解耦——`QWEN_MODEL` 切。
 
 **Q: SWE-bench 0/3 是 bug 吗？**
-A: 不是。`eval/result.json` 的 `engineering_notes` 解释了：agent 持续 12 turn 真正读了 rule 文件，但 SQL parser 修复需要更深层语义。这是 Qwen-7B 能力上限，harness 本身已经验证（smolagents 沙箱限制下 0/1 vs 我们 1/1 已经能说明问题）。
+A: 不是。`eval/result.json` 的 `engineering_notes` 解释了：agent 持续 12 turn 真正读了 rule 文件，但 SQL parser 修复需要更深层语义。这是 Qwen-7B 能力上限，harness 本身已经验证（smolagents 沙箱限制下 0/1 vs 我们 1/1 已经能说明问题）。**2026-08-24 更新**：本轮重新抽样 3 题（astropy），实测同样 `0/3 PASS`——结论不变。本轮同时修了两个 harness 真实 bug（subagent 的 `arguments` 序列化、`test_swebench_lite_sample` 不切 base_commit），harness 路径已稳定。
+
+**Q: SGLang 切到 vLLM 后有什么坑？**
+A: 四条经验（2026-08-24 验证）：
+1. **Coder 模型必须配合 `--chat-template coder_chat_template.jinja --generation-config vllm`**，否则模型陷入"好的，请提供代码..."被动反问（transformers 本地复现确认是模型行为，不是 vLLM 引擎问题）
+2. **`--tool-call-parser` 必须用 `qwen_coder_json`**（自定义 parser plugin，由 `src/vllm_plugin/qwen_coder_tool_parser.py` 提供）—— PPU 定制版 vLLM 的 `qwen3_xml` parser 有 bug，本地单测都无法解析 Qwen2.5 的 `<tool_call>` 格式；`hermes` parser 对 Coder 模型的 4 种 wrapper 形态只命中 12%（gate 实测）。切到 instruct 版模型可以保留 `--tool-call-parser hermes`（对 Qwen2.5-Instruct 完美）。
+3. **`--tool-parser-plugin src/vllm_plugin/qwen_coder_tool_parser.py` 不能省** —— vLLM 0.23+ 用 `ToolParserManager.import_tool_parser` 加载自定义 parser，漏了这个启动就直接报"tool parser 'qwen_coder_json' not found"。
+4. **回传 assistant message 时 `arguments` 必须是 JSON 字符串**——`LLMClient` 内部把字符串转成 dict 方便消费，但 vLLM OpenAI 协议边界拒绝 dict，`_to_wire_tool_calls` 已在 harness 修好
+
+**Q: A-2 parser plugin 漏了 tool call 会发生什么？**
+A: Agent 端**完全不检测**。`message.tool_calls == []` + `message.content` 是文本时 → 进合法文本路径（patch extract / done / prose nudge）。Agent **永不在 `message.content` 里找工具调用 JSON** —— 哪怕模型明明写了一个 `<tool_call>{...}</tool_call>`，agent 也不去解析。诊断通过 `tool_call_native_rate` 部署级 metric 看：rate < 1.0 说明 parser plugin 不健康。修 parser 比 agent 端兜底更重要。
+
+**Q: 旧 `text_tool_call_fallback` / `parser_miss_count` / `fallback_*` 字段全去哪了？**
+A: 都删了。Agent 主循环不再调用 `_parse_text_tool_calls`，所以这些字段没有事件来源。**唯一保留的健康指标是 `tool_call_native_rate`**（阈值 = 1.0）。XML-tag-split 形态（gate 1/8 = 12%）是已记录的未支持边角，部署层修复路径是改 chat template / system prompt。
+
+**Q: 工具版 Qwen2.5-7B-Instruct 比 Coder 版好在哪儿？**
+A: Qwen2.5-7B-Instruct 经过工具调用训练，能直接产出原生 `tool_calls`（`finish_reason=tool_calls`），不再走 `_parse_text_tool_calls` 兜底。toy-repo 上 11 turn 修通（Coder 版 55 turn），同样 `done_reason=tests_passed`。代价：偏离 README "只用 Qwen2.5-Coder-7B-Instruct"的模型指定，适合做对照实验或需要更快 toy-repo 反馈的场景。SWE-bench Lite 等大仓库任务建议至少 14B+ 工具微调版。
 
 **Q: Trace replay 只能跑 0.8 match——能跑到 1.0 吗？**
 A: 跑不到 1.0 因为 trace 步骤间存在 state-chain（write_file 改文件 → 后续 read_file 看到新内容）。docstring 已说明这是正确行为，不是 replay bug。**真正完全的 1.0 match 需要 trace 自带 monkeypatch 时间戳**——这是 Anthropic 复现 0/1 实验的常见 trade-off。

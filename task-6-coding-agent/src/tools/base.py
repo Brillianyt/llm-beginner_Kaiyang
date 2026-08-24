@@ -156,13 +156,15 @@ def check_blocked_git(args: list) -> Optional[str]:
 # Read-before-write registry.
 # ---------------------------------------------------------------------------
 #
-# We keep a module-level fallback for callers that haven't been wired up
-# to a per-instance registry (eval harness, ablations, tests). When
-# ``write_file`` / ``edit`` is invoked through a ``BaseTool`` instance,
-# they consult ``self._read_paths`` so two parallel CodingAgent
-# instances don't bleed reads into each other.
+# Live agents keep a per-instance ``self._read_paths`` set so two parallel
+# ``CodingAgent`` instances don't bleed reads into each other.  The
+# module-level ``READ_REGISTRY`` here is a separate concern: it is the
+# test-only state used by ``test_smoke.py`` to wire ``write_file`` /
+# ``edit`` assertions without spinning up a full agent.  ``BaseTool``
+# instances never fall back to this module-level state — production code
+# paths always go through ``self._read_paths``.
 
-# Module-level fallback (single-process, single-agent).
+# Module-level (test-only) registry — single-process, single-agent-test
 READ_REGISTRY: set = set()
 
 

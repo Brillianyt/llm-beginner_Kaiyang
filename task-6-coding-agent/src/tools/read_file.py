@@ -46,18 +46,12 @@ _HEADER_RESERVE_CHARS = 400
 class ReadFileTool(BaseTool):
     name: ClassVar[str] = "read_file"
     description: ClassVar[str] = (
-        "Reads a UTF-8 text file from the local filesystem. "
-        "The file_path must be an absolute path. By default reads up to "
-        "400 lines from the start; the returned header is 1-based and "
-        "shows the *actual* line range returned (it may be smaller than "
-        "the requested limit if the body exceeds the tool's char budget). "
-        "When truncated, an explicit `[output truncated at N chars; call "
-        "read_file again with offset=K to continue]` marker is appended. "
-        "Use `offset` / `limit` to page long files. Pass "
-        "`include_line_numbers=true` to get `cat -n` style output "
-        "(1-based); default is clean text, which is safer to feed back "
-        "into write_file. Files larger than 256 KB are rejected — page "
-        "with offset/limit."
+        "Read a UTF-8 file. file_path absolute. Header is 1-based and "
+        "shows the *actual* line range returned. If truncated, the "
+        "response ends with `call read_file again with offset=K` — call "
+        "again with offset=K to continue. Pass `include_line_numbers=true` "
+        "for cat -n output. Default clean text (safer to feed back to "
+        "write_file). Files > 256 KB are rejected."
     )
     input_schema: ClassVar[Dict[str, Any]] = {
         "type": "object",

@@ -34,8 +34,9 @@ class GitApplyTool(BaseTool):
     description: ClassVar[str] = (
         "Applies a unified diff to the working tree using `git apply`. "
         "By default runs in dry_run mode (`--check` only). Set `dry_run=false` "
-        "to actually write the changes. Supports `three_way=true` for merge "
-        "fallback. Refuses to touch paths outside the repo root."
+        "to actually write the changes. Supports `three_way=true` for explicit "
+        "three-way merge conflict resolution. Refuses to touch paths outside "
+        "the repo root."
     )
     input_schema: ClassVar[Dict[str, Any]] = {
         "type": "object",
@@ -209,5 +210,5 @@ def _render(d: Dict[str, Any]) -> str:
     files = ", ".join(d["files_touched"])
     head = f"applied OK  files=[{files}]\n"
     if d["fuzzy"]:
-        head += "(with --3way fallback)\n"
+        head += "(with explicit three-way merge)\n"
     return head

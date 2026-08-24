@@ -33,6 +33,11 @@ class DoneReason(str, Enum):
     MAX_TURNS = "max_turns"
     ERROR = "error"
     ABORTED = "aborted"
+    # Set when the agent's stuck-loop detector fires (3+ consecutive
+    # identical tool signatures).  Mirrors Claude Code's 5-step
+    # no-insight heuristic but is tighter because Qwen2.5-Coder-7B
+    # spins faster than Opus.
+    STUCK = "stuck"
 
 
 @dataclass

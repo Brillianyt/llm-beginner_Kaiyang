@@ -15,6 +15,11 @@ log = logging.getLogger("context")
 COMPACT_THRESHOLD_CHARS = 25_000
 KEEP_HEAD = 3            # initial system + first user/assistant
 KEEP_TAIL = 5            # latest few turns
+# Head must always cover the system prompt + first user message;
+# the compaction note is a USER-role message (NOT system — OpenAI
+# chat-completions expects system only at index 0, and most models
+# only process the first system message, so a mid-conversation
+# system note would be silently ignored).
 
 
 def estimate_chars(messages: Iterable[Dict[str, Any]]) -> int:
@@ -61,10 +66,15 @@ def maybe_compact(
         return messages, False
     compacted = head + [
         {
-            "role": "system",
+            "role": "user",
             "content": (
-                "[compacted] earlier history collapsed to fit the context window; "
-                "see the trace log for the full record."
+                "[compacted] Earlier conversation history was collapsed to "
+                "fit the context window. The most recent turns (including "
+                "any error responses) are preserved verbatim below. If a "
+                "tool call failed earlier, its [ERROR] message is in this "
+                "tail — re-read it and adjust your next attempt "
+                "(different old_string, different tool, etc.). Do NOT "
+                "repeat the same failing call."
             ),
         }
     ] + tail

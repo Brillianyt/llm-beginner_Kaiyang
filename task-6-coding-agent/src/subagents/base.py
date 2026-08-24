@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from src.llm_client import LLMClient, LLMError
+from src.llm_client import LLMClient, LLMError, to_wire_tool_calls
 from src.mcp_server import call_tool
 
 log = logging.getLogger("subagents")
@@ -125,7 +125,7 @@ class BaseSubagent:
                 messages.append({
                     "role": "assistant",
                     "content": msg.content,
-                    "tool_calls": msg.tool_calls,
+                    "tool_calls": to_wire_tool_calls(msg.tool_calls),
                 })
                 for tc in msg.tool_calls:
                     fn = tc["function"]
