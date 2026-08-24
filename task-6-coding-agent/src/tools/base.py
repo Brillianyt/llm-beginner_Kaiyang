@@ -36,6 +36,12 @@ class BaseTool:
     is_read_only: ClassVar[bool] = True
     max_result_chars: ClassVar[int] = 50_000
 
+    def __init__(self) -> None:
+        # Per-instance read-before-write registry. Multiple CodingAgent
+        # instances (e.g. ablations S2 runs 3 in a row) get isolated
+        # state — instance 2 can't see instance 1's reads. See P4.
+        self._read_paths: set = set()
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,
@@ -144,3 +150,61 @@ def check_blocked_git(args: list) -> Optional[str]:
         if fragment in blob:
             return f"git command contains blocked fragment: '{fragment}'"
     return None
+
+
+# ---------------------------------------------------------------------------
+# Read-before-write registry.
+# ---------------------------------------------------------------------------
+#
+# We keep a module-level fallback for callers that haven't been wired up
+# to a per-instance registry (eval harness, ablations, tests). When
+# ``write_file`` / ``edit`` is invoked through a ``BaseTool`` instance,
+# they consult ``self._read_paths`` so two parallel CodingAgent
+# instances don't bleed reads into each other.
+
+# Module-level fallback (single-process, single-agent).
+READ_REGISTRY: set = set()
+
+
+def mark_read(abs_path: str) -> None:
+    READ_REGISTRY.add(abs_path)
+
+
+def has_been_read(abs_path: str) -> bool:
+    return abs_path in READ_REGISTRY
+
+
+def clear_read_registry() -> None:
+    READ_REGISTRY.clear()
+
+
+# ---------------------------------------------------------------------------
+# Per-instance wiring
+# ---------------------------------------------------------------------------
+
+# When a tool is constructed inside a ``CodingAgent`` instance, the agent
+# patches its ``_read_paths`` attribute so the read-before-write guard
+# is per-agent. This module-level holder just records the latest agent
+# scope (used by subagents and the eval harness via ``clear_read_registry``).
+_CURRENT_AGENT_READS: set | None = None
+
+
+def set_agent_reads(paths: set | None) -> None:
+    """Bind the module-level helpers to a specific CodingAgent's
+    per-instance read registry. Pass ``None`` to revert to the shared
+    module-level registry."""
+    global _CURRENT_AGENT_READS
+    _CURRENT_AGENT_READS = paths
+
+
+def mark_read_for(abs_path: str, reads: set | None) -> None:
+    if reads is not None:
+        reads.add(abs_path)
+    else:
+        mark_read(abs_path)
+
+
+def has_been_read_for(abs_path: str, reads: set | None) -> bool:
+    if reads is not None:
+        return abs_path in reads
+    return has_been_read(abs_path)

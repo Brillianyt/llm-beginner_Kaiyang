@@ -36,13 +36,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.context import maybe_compact
-from src.hooks import HookSystem, default_pre_hooks
+from src.hooks import HookSystem, default_post_hooks, default_pre_hooks
 from src.llm_client import LLMClient, LLMError
 from src.mcp_server import call_tool as mcp_call_tool, list_tools
 from src.prompt import build_system_prompt
 from src.skill_loader import SkillLoader
 from src.subagents.search_executor import SearchExecutorSubagent
 from src.subagents.test_executor import TestExecutorSubagent
+from src.tools import make_tool_set
 from src.trace import DoneReason, StepKind, Trace, TraceStep
 
 log = logging.getLogger("coding_agent")
@@ -51,6 +52,14 @@ MAX_TURNS_DEFAULT = 50
 
 _PATCH_FENCE_RE = re.compile(r"```(?:diff|patch)?\s*\n(.*?)```", re.DOTALL)
 _FINALISE_RE = re.compile(r"^\s*(?:##\s*Summary|Done|<answer>)", re.IGNORECASE | re.MULTILINE)
+# Fallback: some models (notably Qwen2.5-Coder) emit tool calls as JSON
+# *strings* in the assistant content instead of native ``tool_calls``. Try
+# to extract any fenced ``{"name": "...", "arguments": {...}}`` block.
+_JSON_TOOL_RE = re.compile(
+    r"\{\s*\"name\"\s*:\s*\"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\"\s*,\s*"
+    r"\"arguments\"\s*:\s*(?P<args>\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})\s*\}",
+    re.DOTALL,
+)
 
 
 class CodingAgent:
@@ -64,7 +73,12 @@ class CodingAgent:
         max_turns: int = MAX_TURNS_DEFAULT,
         auto_load_skills: bool = True,
         enable_subagents: bool = True,
+        bootstrap_explore: bool = False,
     ) -> None:
+        # Per-instance read-before-write registry (see P4). Two parallel
+        # CodingAgents now keep isolated state instead of sharing the
+        # module-level READ_REGISTRY.
+        self._read_paths: set = set()
         if llm is None:
             llm = LLMClient()
         self.llm = llm
@@ -72,10 +86,15 @@ class CodingAgent:
         self.max_turns = int(os.environ.get("CODING_AGENT_MAX_TURNS", max_turns))
         self.auto_load_skills = auto_load_skills
         self.enable_subagents = enable_subagents
+        self.bootstrap_explore = bootstrap_explore
 
-        # MCP tool catalogue + meta-tools.
-        self._mcp_tool_schemas = list(list_tools())
-        self._mcp_tool_names = {t["name"] for t in self._mcp_tool_schemas}
+        # MCP tool catalogue + meta-tools. We instantiate a *private*
+        # tool set per agent so the per-instance ``_read_paths`` we wire
+        # below actually isolates this agent from any other.
+        self._tools = make_tool_set()
+        self._tools_by_name = {t.name: t for t in self._tools}
+        self._mcp_tool_schemas = [t.to_dict() for t in self._tools]
+        self._mcp_tool_names = set(self._tools_by_name)
         self._meta_schemas = self._build_meta_tool_schemas()
         self._all_schemas = self._mcp_tool_schemas + self._meta_schemas
         self._meta_names = {t["name"] for t in self._meta_schemas}
@@ -86,10 +105,20 @@ class CodingAgent:
             "test_executor": TestExecutorSubagent(self.llm),
         }
 
-        # Hooks: default to "no test writes".
+        # Hooks: default to "no test writes" + an audit logger.
+        # The audit log path can be overridden via CODING_AGENT_AUDIT_LOG.
         self.hooks = HookSystem()
         for h in default_pre_hooks():
             self.hooks.register_pre(h)
+        audit_path = os.environ.get("CODING_AGENT_AUDIT_LOG")
+        for h in default_post_hooks(audit_path):
+            self.hooks.register_post(h)
+
+        # Per-instance read registry. Walk every tool the agent can call
+        # and point its ``_read_paths`` at our own set so two parallel
+        # agents don't bleed read state into each other.
+        for tool in self._tools:
+            tool._read_paths = self._read_paths
 
         # current_trace (set per run) — meta-tools write into it.
         self._current_trace: Optional[Trace] = None
@@ -112,6 +141,19 @@ class CodingAgent:
             )},
             {"role": "user", "content": issue},
         ]
+        # Mark the system prompt as a prompt-cache breakpoint so subsequent
+        # turns hit the OpenAI/SGLang cache (saves ~2K prompt tokens/turn).
+        # ``cache_control`` is ignored by backends that don't support it
+        # (Ollama, llama.cpp) — graceful degradation.
+        if messages and messages[0].get("role") == "system":
+            messages[0] = {**messages[0], "cache_control": {"type": "ephemeral"}}
+
+        # Bootstrap exploration — for big repos the model needs to see
+        # the directory layout before deciding what to read.
+        if self.bootstrap_explore:
+            bootstrap_obs = self._bootstrap_explore(repo_root)
+            messages.append({"role": "assistant", "content": ""})
+            messages.append({"role": "user", "content": bootstrap_obs})
 
         submitted_patch = ""
         submitted_summary = ""
@@ -122,6 +164,9 @@ class CodingAgent:
             messages, did_compact = maybe_compact(messages)
             if did_compact:
                 trace["compaction_events"] = int(trace.get("compaction_events", 0)) + 1
+            # `maybe_compact` re-applies the prompt-cache marker on the
+            # system message after every compaction, so we don't need to
+            # re-mark it here.
 
             try:
                 resp = self.llm.chat(messages, tools=self._all_schemas)
@@ -143,15 +188,36 @@ class CodingAgent:
                 "content": msg.content,
                 "tool_calls": msg.tool_calls,
             })
+
+            # Fallback: if the model did not produce native tool_calls but
+            # its content contains a JSON tool-call block, synthesise one.
+            if not msg.tool_calls:
+                synthesized = _parse_text_tool_calls(msg.content or "")
+                if synthesized:
+                    msg.tool_calls = synthesized
+                    trace.append(TraceStep(kind=StepKind.THOUGHT, payload={
+                        "note": "fallback: parsed text-mode tool calls",
+                        "count": len(synthesized),
+                    }))
             trace["last_assistant_excerpt"] = (msg.content or "")[:400]
             trace["token_usage"] = resp.usage
 
             # Track skill loads across turns.
             thought_text = (msg.content or "").splitlines()[0][:200] if msg.content else ""
 
+            # Accumulate token usage across turns.
+            usage = resp.usage or {}
+            agg = self._current_trace.get("token_usage") or {}
+            for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                agg[k] = int(agg.get(k, 0) or 0) + int(usage.get(k, 0) or 0)
+            self._current_trace["token_usage"] = agg
+
             if not msg.tool_calls:
-                # Model emitted plain text. Try to extract a patch from a
-                # fenced code block; otherwise treat it as a final answer.
+                # Model emitted plain text. First try to extract a patch
+                # from a fenced code block. If no patch AND the text does
+                # not look like a deliberate "done" signal, treat it as
+                # mid-stream prose and nudge the model to continue — this
+                # avoids premature stop after one turn.
                 patch = _extract_patch(msg.content or "")
                 if patch:
                     submitted_patch = patch
@@ -161,14 +227,36 @@ class CodingAgent:
                         "via": "fenced_patch",
                         "text_excerpt": thought_text,
                     }))
-                else:
+                    break
+                if _looks_done(msg.content or ""):
                     done_reason = DoneReason.COMPLETED
                     trace.append(TraceStep(kind=StepKind.SUMMARY, payload={
                         "via": "text_only",
                         "text": (msg.content or "")[:1000],
                     }))
                     submitted_summary = msg.content or ""
-                break
+                    break
+                # Mid-stream prose — feed it back as user follow-up and
+                # let the agent decide whether to call a tool or submit.
+                trace.append(TraceStep(kind=StepKind.SUMMARY, payload={
+                    "via": "text_prose",
+                    "text": (msg.content or "")[:400],
+                }))
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "Please continue. If the work is finished, call "
+                        "`submit_patch` (with the diff) or `submit_text`. "
+                        "Otherwise call the next tool you need."
+                    ),
+                })
+                continue
+
+            # Deduplicate identical (name, arguments) tool calls — some
+            # models (notably Qwen2.5-Coder) emit the same JSON twice in
+            # one response. The second call is always a no-op (the file is
+            # already written / test already run).
+            msg.tool_calls = _dedupe_tool_calls(msg.tool_calls)
 
             stop_loop = False
             for tc in msg.tool_calls:
@@ -208,10 +296,26 @@ class CodingAgent:
         # end for turn
 
         # Verify the patch (re-run tests) before finalising.
+        # If the agent never explicitly submitted a patch but the working
+        # tree was modified via write_file, we still want to confirm
+        # the repo is in a green state.
         tests_passed = False
         if submitted_patch.strip():
-            self._apply_patch(submitted_patch, repo_root)
+            # Only apply the patch if ``git apply --check`` succeeds —
+            # this guards against the agent emitting a diff that was
+            # already applied via write_file (which would corrupt the file
+            # by appending duplicate hunks).
+            if self._can_apply_patch(submitted_patch, repo_root):
+                self._apply_patch(submitted_patch, repo_root)
+            else:
+                log.info("submitted patch overlaps with current tree; skipping apply")
             tests_passed = self._verify_tests(repo_root)
+        else:
+            # The agent may have edited files directly via write_file
+            # without ever calling submit_patch — still worth checking.
+            tests_passed = self._verify_tests(repo_root)
+            if tests_passed:
+                done_reason = DoneReason.TESTS_PASSED
 
         trace.finalize(
             done_reason=done_reason,
@@ -249,13 +353,45 @@ class CodingAgent:
         if decision.value == "deny":
             return "[ERROR] blocked by PreToolUse hook (likely test-write protection)", True
 
-        # MCP tool.
+        # MCP tool — use the private instance set (not the module-level
+        # ALL_TOOLS) so this agent's read state stays isolated.
         if name not in self._mcp_tool_names:
             return f"[ERROR] unknown tool: {name}", True
-        result = mcp_call_tool(name, args, repo_root)
+        tool = self._tools_by_name[name]
+        result = tool(args, repo_root)
         obs = result.content if not result.is_error else f"[ERROR] {result.content}"
         obs = self.hooks.fire_post(name, args, obs)
         return obs, result.is_error
+
+    def _bootstrap_explore(self, repo_root: Path) -> str:
+        """Return a structured snapshot of the repo for the first model turn.
+
+        Uses this agent's *private* tool set (via ``self._tools_by_name``)
+        so the read marks land in our own ``_read_paths`` and the
+        per-instance edit / write guards work later.
+        """
+        lines: List[str] = [
+            f"Repo root: {repo_root}",
+            "",
+            "Tree (top-level, depth 2):",
+        ]
+        list_tool = self._tools_by_name["list_files"]
+        read_tool = self._tools_by_name["read_file"]
+        tree = list_tool({"path": ".", "max_depth": 2}, repo_root)
+        lines.append(tree.content)
+        lines.append("")
+        # Sniff for any README that mentions "tests" / "build".
+        for candidate in ("README.md", "README.rst", "Readme.md"):
+            p = repo_root / candidate
+            if p.exists() and p.is_file():
+                snippet = read_tool(
+                    {"file_path": str(p), "limit": 30}, repo_root
+                ).content
+                lines.append(f"=== {candidate} (first 30 lines) ===")
+                lines.append(snippet[: 2_000])
+                lines.append("")
+                break
+        return "\n".join(lines)
 
     def _handle_load_skill(self, args: Dict[str, Any]) -> str:
         if self.skill_loader is None:
@@ -290,6 +426,7 @@ class CodingAgent:
                 "summary": result.summary[:500],
                 "steps": result.steps,
                 "error": result.error,
+                "transcript": [e.to_dict() for e in result.transcript],
             })
             self._current_trace["subagent_invocations"] = invocations
         if result.error:
@@ -300,7 +437,7 @@ class CodingAgent:
     # Verification + diff apply
     # ------------------------------------------------------------------
 
-    def _verify_tests(self, repo_root: Path) -> bool:
+    def _verify_tests(self, repo_root: Path, timeout: int = 60) -> bool:
         try:
             cp = subprocess.run(
                 [sys.executable, "-m", "pytest", "-q"],
@@ -309,11 +446,30 @@ class CodingAgent:
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=timeout,
             )
             return cp.returncode == 0
+        except subprocess.TimeoutExpired:
+            log.warning("verify_tests timed out after %ds", timeout)
+            return False
         except Exception as e:  # noqa: BLE001
             log.warning("verify_tests failed: %s", e)
+            return False
+
+    def _can_apply_patch(self, patch: str, repo_root: Path) -> bool:
+        """Return True if ``git apply --check`` accepts the patch."""
+        try:
+            cp = subprocess.run(
+                ["git", "apply", "--check", "-"],
+                cwd=str(repo_root),
+                input=patch,
+                shell=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            return cp.returncode == 0
+        except Exception:  # noqa: BLE001
             return False
 
     def _apply_patch(self, patch: str, repo_root: Path) -> bool:
@@ -426,6 +582,104 @@ def _extract_patch(text: str) -> str:
     if text.lstrip().startswith("diff --git"):
         return text.strip()
     return ""
+
+
+_DONE_MARKER_RE = re.compile(
+    # English markers
+    r"(?:^|\b)(?:##\s*(?:Summary|Result|Final)|Done\b|<answer>|"
+    r"I['\u2019]?ve finished|I have completed|Final answer)(?:\b|$)|"
+    # Chinese markers — Qwen-7B often writes in Chinese once it goes off-script.
+    # Both ASCII and full-width Chinese punctuation (， 。 ； ！ ？) are
+    # accepted in the boundary classes. U+FF0C is the full-width comma
+    # `，`; U+3002 is the full-width period `。`.
+    r"(?:^|[\s,.\uff0c\u3002,。;!?()（）：：、])"
+    r"(?:好的|完了?|已(?:修复|完成|搞定)|搞定|##\s*(?:总结|结果|完成))"
+    r"(?:[。!？\s,.;\uff0c\u3002,]|$)|"
+    # Japanese / Korean
+    r"(?:^|\s)(?:完了|끝났)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _looks_done(text: str) -> bool:
+    """Return True if the assistant text looks like a deliberate finish.
+
+    The previous behaviour treated any text-only response as "done" — but
+    that made the loop stop on the first model prose turn (turn 1) before
+    any actual fix. We now require an explicit finish marker; otherwise we
+    treat the prose as mid-stream and nudge the model to keep going.
+    """
+    if not text:
+        return False
+    return bool(_DONE_MARKER_RE.search(text))
+
+
+def _dedupe_tool_calls(calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Collapse duplicate tool calls (same name + same arguments)."""
+    seen: set = set()
+    out: List[Dict[str, Any]] = []
+    for tc in calls:
+        fn = tc.get("function") or {}
+        args = fn.get("arguments", {})
+        # Normalise dict args to a hashable key via JSON.
+        try:
+            key = (fn.get("name", ""), json.dumps(args, sort_keys=True, default=str))
+        except (TypeError, ValueError):
+            key = (fn.get("name", ""), repr(args))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(tc)
+    return out
+
+
+def _parse_text_tool_calls(text: str) -> Optional[List[Dict[str, Any]]]:
+    """Extract ``{"name":..., "arguments":...}`` blocks from the assistant text.
+
+    Returns a list of OpenAI-shaped tool_calls dicts, or ``None`` if no
+    parseable tool call is found. Handles both fenced (`` ```json ... ``` ``)
+    and raw JSON output.
+    """
+    if not text:
+        return None
+    out: List[Dict[str, Any]] = []
+    seen_spans = set()
+    for i, m in enumerate(_JSON_TOOL_RE.finditer(text)):
+        try:
+            args = json.loads(m.group("args"))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(args, dict):
+            continue
+        out.append({
+            "id": f"call_text_{i}",
+            "type": "function",
+            "function": {"name": m.group("name"), "arguments": args},
+        })
+        seen_spans.add((m.start(), m.end()))
+    # Fallback: try line-by-line JSON parsing (when the model outputs a
+    # bare JSON object without surrounding prose).
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        if "\"name\"" not in line:
+            continue
+        # The regex above might have already consumed this; skip if so.
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict) or "name" not in obj or "arguments" not in obj:
+            continue
+        if not isinstance(obj["arguments"], dict):
+            continue
+        out.append({
+            "id": f"call_text_{len(out)}",
+            "type": "function",
+            "function": {"name": obj["name"], "arguments": obj["arguments"]},
+        })
+    return out or None
 
 
 def _fallback_apply(diff: str, repo_root: Path) -> bool:

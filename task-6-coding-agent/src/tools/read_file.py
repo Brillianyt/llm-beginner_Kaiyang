@@ -25,7 +25,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, ClassVar, Dict
 
-from .base import BaseTool, safe_resolve
+from .base import BaseTool, mark_read_for, safe_resolve
 
 
 class ReadFileTool(BaseTool):
@@ -43,7 +43,11 @@ class ReadFileTool(BaseTool):
         "properties": {
             "file_path": {
                 "type": "string",
-                "description": "Absolute path to the file (must be inside the repo root).",
+                "pattern": "^/",
+                "description": (
+                    "Absolute path to the file (must start with '/', "
+                    "and stay inside the repo root)."
+                ),
             },
             "offset": {
                 "type": "integer",
@@ -53,17 +57,26 @@ class ReadFileTool(BaseTool):
             "limit": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 2000,
-                "description": "Maximum number of lines to read (default 2000).",
+                "maximum": 1000,
+                "description": "Maximum number of lines to read (default 400).",
+            },
+            "include_line_numbers": {
+                "type": "boolean",
+                "description": (
+                    "When true, prefix every line with its 1-based number (cat -n). "
+                    "Default is false — emit clean text, which is safer to feed "
+                    "back into write_file."
+                ),
+                "default": False,
             },
         },
         "required": ["file_path"],
     }
     is_read_only: ClassVar[bool] = True
-    max_result_chars: ClassVar[int] = 200_000  # cat -n body can be larger
+    max_result_chars: ClassVar[int] = 8_000  # hard cap on tool output (Qwen 7B + 8K ctx)
 
     SIZE_LIMIT_BYTES = 256 * 1024
-    DEFAULT_LIMIT = 2000
+    DEFAULT_LIMIT = 400  # lines per call (Qwen 7B + 8K ctx needs small reads)
 
     def call(self, args: Dict[str, Any], repo_root: Path) -> str:
         path_str = args["file_path"]
@@ -85,15 +98,25 @@ class ReadFileTool(BaseTool):
             return f"[ERROR] file not found: {path_str}"
         if not target.is_file():
             return f"[ERROR] not a regular file: {path_str}"
+        # Record this read so a later write_file/edit is allowed.
+        # Two scopes: the per-instance set (preferred for multi-agent
+        # isolation) and the module-level shared set (fallback).
+        mark_read_for(str(target), self._read_paths)
         size = target.stat().st_size
         truncated = size > self.SIZE_LIMIT_BYTES
         with target.open("r", encoding="utf-8", errors="replace") as f:
             all_lines = f.readlines()
         total_lines = len(all_lines)
         body = all_lines[offset : offset + limit]
-        # cat -n format: 1-based line number + TAB + line content
-        numbered = [f"{i + 1 + (offset or 0)}\t{line.rstrip()}" for i, line in enumerate(body)]
-        content = "\n".join(numbered)
+        # Default: clean text (no line-number prefix). Qwen2.5-Coder
+        # tends to echo `cat -n` output back into `write_file` content,
+        # which corrupts the file. Pass `include_line_numbers=true` to
+        # opt into the spec-described cat -n format.
+        if bool(args.get("include_line_numbers", False)):
+            numbered = [f"{i + 1 + (offset or 0)}\t{line.rstrip()}" for i, line in enumerate(body)]
+            content = "\n".join(numbered)
+        else:
+            content = "".join(body)
         pieces = {
             "file_path": str(target),
             "content": content,

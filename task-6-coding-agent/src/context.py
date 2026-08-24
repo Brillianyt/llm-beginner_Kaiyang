@@ -39,14 +39,25 @@ def maybe_compact(
     keep_head: int = KEEP_HEAD,
     keep_tail: int = KEEP_TAIL,
 ) -> Tuple[List[Dict[str, Any]], bool]:
-    """Return (possibly compacted messages, did_compact)."""
+    """Return (possibly compacted messages, did_compact).
+
+    If we slice the middle out, the system message is still at index 0
+    but its position relative to the new content has changed. We
+    re-apply ``cache_control={"type": "ephemeral"}`` so the OpenAI/SGLang
+    prompt cache can re-key on the new prefix. Without this re-mark the
+    cache would be invalidated by every compaction.
+    """
     if not messages:
         return messages, False
     if estimate_chars(messages) < threshold:
+        # Even on the no-compaction path, defensively re-apply the cache
+        # marker in case the caller mutated the system message.
+        _ensure_cache_marker(messages)
         return messages, False
     head = messages[: max(1, keep_head)]
     tail = messages[-keep_tail:] if len(messages) > keep_head + keep_tail else []
     if not tail:
+        _ensure_cache_marker(messages)
         return messages, False
     compacted = head + [
         {
@@ -57,6 +68,7 @@ def maybe_compact(
             ),
         }
     ] + tail
+    _ensure_cache_marker(compacted)
     log.info(
         "compaction: %d → %d msgs (chars %d → %d)",
         len(messages),
@@ -65,3 +77,20 @@ def maybe_compact(
         estimate_chars(compacted),
     )
     return compacted, True
+
+
+def _ensure_cache_marker(messages: List[Dict[str, Any]]) -> None:
+    """Re-apply the prompt-cache marker on the first system message.
+
+    Mutates ``messages`` in place. Backends that don't honour
+    ``cache_control`` (Ollama, llama.cpp) ignore this field; we don't
+    gate on the backend to keep the call site trivial.
+    """
+    if not messages:
+        return
+    head = messages[0]
+    if head.get("role") != "system":
+        return
+    if head.get("cache_control") == {"type": "ephemeral"}:
+        return
+    messages[0] = {**head, "cache_control": {"type": "ephemeral"}}

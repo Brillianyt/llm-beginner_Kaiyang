@@ -64,42 +64,80 @@ def call_tool(name: str, args: Dict[str, Any], repo_root: str | Path) -> ToolRes
 # FastMCP server entry point
 # ---------------------------------------------------------------------------
 
-def _build_fast_mcp_server():
-    """Build a ``FastMCP`` instance with every tool registered."""
-    from mcp.server.fastmcp import FastMCP  # imported lazily
-    from mcp.server.fastmcp.tools import Tool
+def _build_mcp_server():
+    """Build an ``mcp.server.Server`` instance with every tool registered.
 
-    server = FastMCP("coding-agent-tools")
+    Uses the public SDK types — ``mcp.Tool`` for descriptors and the
+    ``list_tools`` / ``call_tool`` request handlers. Survives SDK
+    internal renames because we only touch documented attributes.
+    """
+    import asyncio
+    from mcp import Tool
+    from mcp.server import Server
+
+    server: Server = Server("coding-agent-tools")
 
     import os as _os
     _default_repo = Path(_os.environ.get(
         "CODING_AGENT_REPO_ROOT", _os.getcwd()
     )).resolve()
 
-    for tool in _TOOL_BY_NAME.values():
-        def _make_handler(t: BaseTool, repo_root: Path):
-            def handler(**kwargs: Any) -> str:
-                args = {k: v for k, v in kwargs.items() if v is not None}
-                return t(args, repo_root).content
-            handler.__name__ = t.name
-            return handler
+    @server.list_tools()
+    async def _handle_list_tools() -> list[Tool]:
+        return [
+            Tool(
+                name=t.name,
+                description=t.description,
+                inputSchema=t.input_schema,
+            )
+            for t in _TOOL_BY_NAME.values()
+        ]
 
-        handler = _make_handler(tool, _default_repo)
-        mcp_tool = Tool.from_function(
-            fn=handler,
-            name=tool.name,
-            description=tool.description,
-        )
-        mcp_tool.parameters = tool.input_schema  # type: ignore[attr-defined]
-        server._tool_manager._tools[mcp_tool.name] = mcp_tool  # type: ignore[attr-defined]
+    @server.call_tool()
+    async def _handle_call_tool(name: str, arguments: dict):
+        tool = _TOOL_BY_NAME.get(name)
+        if tool is None:
+            return [{"type": "text", "text": f"[ERROR] unknown tool: {name}"}]
+        # Boundary schema validation — surface bad arguments at the MCP
+        # layer instead of letting them reach the tool and explode
+        # mid-execution. The tool's own ``inputSchema`` is the contract.
+        try:
+            import jsonschema  # type: ignore
+            jsonschema.validate(instance=arguments or {}, schema=tool.input_schema)
+        except ImportError:
+            pass  # jsonschema is optional — tool will validate defensively
+        except jsonschema.ValidationError as e:
+            return [{
+                "type": "text",
+                "text": f"[ERROR] invalid arguments for {name}: {e.message}",
+            }]
+        result = tool(arguments or {}, _default_repo)
+        return [{"type": "text", "text": result.content}]
 
     return server
 
 
 def main(argv: Optional[List[str]] = None) -> None:
+    """stdio entry point — run via ``python src/mcp_server.py``.
+
+    We avoid ``print`` entirely (would corrupt JSON-RPC); the SDK handles
+    its own handshake on stdin/stdout.
+    """
+    import asyncio
+    from mcp.server.stdio import stdio_server
+
     log.info("starting coding-agent MCP server over stdio")
-    server = _build_fast_mcp_server()
-    server.run(transport="stdio")
+    server = _build_mcp_server()
+
+    async def _run() -> None:
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(
+                read_stream,
+                write_stream,
+                server.create_initialization_options(),
+            )
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":

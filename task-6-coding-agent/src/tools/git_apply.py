@@ -123,15 +123,42 @@ class GitApplyTool(BaseTool):
                     "conflicts": [], "error": None,
                 })
 
+            # Snapshot the files we're about to touch. If the real
+            # ``git apply`` (or the OS) corrupts them mid-write — disk
+            # full, killed by signal, half-written hunk — we can roll
+            # back. This is the tool-layer equivalent of the per-file
+            # snapshot in swebench_sample.
+            touched = _paths_in_patch(patch)
+            snapshot: Dict[str, bytes] = {}
+            try:
+                for rel in touched:
+                    p = repo_path / rel
+                    if p.exists() and p.is_file():
+                        try:
+                            snapshot[rel] = p.read_bytes()
+                        except OSError:
+                            pass
+            except Exception:
+                snapshot = {}
+
             apply_cmd = ["git", "apply"]
             if three_way:
                 apply_cmd.append("--3way")
             apply_cmd.append(patch_path)
             apply_cp = run_subprocess(apply_cmd, cwd=repo_path, timeout=30)
             if apply_cp.returncode != 0:
+                # Roll back anything that did get written before the
+                # failure.
+                for rel, data in snapshot.items():
+                    target = repo_path / rel
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        target.write_bytes(data)
+                    except OSError:
+                        pass
                 conflicts = self._parse_conflicts(apply_cp.stderr or "")
                 return _render({
-                    "applied": False, "files_touched": [], "fuzzy": three_way,
+                    "applied": False, "files_touched": touched, "fuzzy": three_way,
                     "conflicts": conflicts,
                     "error": (apply_cp.stderr or "").strip()[:1500] or "git apply failed",
                 })

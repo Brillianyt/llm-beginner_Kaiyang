@@ -62,8 +62,8 @@ def main() -> int:
 
     if args.mode == "prompt":
         # Remove load_skill from the schema entirely.
-        agent._tool_schemas = [
-            s for s in agent._tool_schemas if s.get("name") != "load_skill"
+        agent._all_schemas = [
+            s for s in agent._all_schemas if s.get("name") != "load_skill"
         ]
 
     start = time.time()
@@ -82,6 +82,7 @@ def main() -> int:
         "turn_count": trace.get("turn_count"),
         "skill_loads": trace.get("skill_loads") or [],
         "compaction_events": trace.get("compaction_events", 0),
+        "usage": trace.get("token_usage") or {},
         "duration_ms": duration,
         "smoke": args.smoke,
     }

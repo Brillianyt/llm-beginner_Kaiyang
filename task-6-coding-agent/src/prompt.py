@@ -24,6 +24,19 @@ TERMINATION_PROTOCOL = (
     "`submit_patch` exactly once with the unified diff and a one-line summary.\n"
     "2. If you cannot make progress, call `submit_text` to stop.\n"
     "3. Never edit test files (`test_*.py`, `*_test.py`, `*/tests/*`).\n"
+    "\n"
+    "How to call a tool (IMPORTANT — read carefully):\n"
+    "- Every tool invocation MUST be a single JSON object with exactly two "
+    "  keys: `\"name\"` (the tool name) and `\"arguments\"` (an object).\n"
+    "- Example: {\"name\": \"read_file\", \"arguments\": {\"file_path\": \"/abs/path\"}}\n"
+    "- Do NOT wrap the JSON in a fenced ``` ``` block — output it raw on its own line.\n"
+    "- Do NOT output Python code that calls the tool — output the JSON above.\n"
+    "- Do NOT use markdown headings or prose between tool calls; the next "
+    "  message you send should be the JSON for the next tool call.\n"
+    "- For `write_file`, the `content` argument is a JSON string — escape "
+    "  internal newlines as `\\n` and internal quotes as `\\\"`.\n"
+    "- After observing the result, decide whether to call another tool or "
+    "  call `submit_patch` / `submit_text`.\n"
 )
 
 SUBAGENT_PROTOCOL = (

@@ -42,11 +42,26 @@ class RunTestsTool(BaseTool):
         "properties": {
             "cmd": {
                 "type": "string",
-                "description": "Override command (default: 'python -m pytest -x --tb=short').",
+                "description": (
+                    "Override command (default: 'python -m pytest -x --tb=short'). "
+                    "The string is split on whitespace; quote segments you "
+                    "want kept together."
+                ),
             },
             "cwd": {
                 "type": "string",
-                "description": "Override working directory (default: repo root).",
+                "description": (
+                    "Override working directory (default: repo root). "
+                    "Must stay inside the repo root."
+                ),
+            },
+            "extra_args": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Extra pytest flags, e.g. ['-x', '-k', 'test_add_positive_numbers']. "
+                    "Appended after `cmd`."
+                ),
             },
             "timeout_s": {
                 "type": "integer",
@@ -84,6 +99,17 @@ class RunTestsTool(BaseTool):
         argv = [sys.executable, "-m", "pytest", "-x", "--tb=short"] if argv == ["pytest"] else argv
         if not argv:
             argv = [sys.executable, "-m", "pytest", "-x", "--tb=short"]
+        # Validate extra_args and append.
+        extra = args.get("extra_args") or []
+        if not isinstance(extra, list) or not all(isinstance(s, str) for s in extra):
+            return "[ERROR] extra_args must be a list of strings"
+        # Reject any extra arg starting with '-' that has '=' or contains shell
+        # metacharacters — keeps the argv-only contract honest.
+        banned = {";", "&", "|", "`", "$", "(", ")", "<", ">", "\n", "\r"}
+        for s in extra:
+            if any(c in s for c in banned):
+                return f"[ERROR] extra_arg contains shell metacharacter: {s!r}"
+        argv = argv + extra
 
         start = time.time()
         try:

@@ -66,6 +66,80 @@ class SkillLoader:
     def get_meta(self, name: str) -> Optional[Dict[str, object]]:
         return self._meta.get(name)
 
+    # ------------------------------------------------------------------
+    # Lazy resources — the agent can read scripts / references on
+    # demand, mirroring Anthropic's Skills design (blueprint Part II §2.3).
+    # ------------------------------------------------------------------
+
+    def list_scripts(self, name: str) -> List[Path]:
+        """List paths under ``<skills_dir>/<name>/scripts/`` (recursively).
+
+        Returns an empty list if the skill is unknown or has no scripts/.
+        Use ``run_bash`` (future tool) or your own subprocess to execute
+        them.
+        """
+        meta = self._meta.get(name)
+        if meta is None:
+            return []
+        skill_dir = meta["path"].parent  # type: ignore[arg-type]
+        scripts_dir = skill_dir / "scripts"
+        if not scripts_dir.is_dir():
+            return []
+        return sorted(scripts_dir.rglob("*"))
+
+    def read_script(self, name: str, relative: str) -> Optional[str]:
+        """Read a file under ``<skills_dir>/<name>/scripts/<relative>``.
+
+        Returns ``None`` if the file doesn't exist, isn't inside the
+        skill's ``scripts/`` tree, or exceeds the 256 KB cap.
+        """
+        meta = self._meta.get(name)
+        if meta is None:
+            return None
+        skill_dir = meta["path"].parent  # type: ignore[arg-type]
+        target = (skill_dir / "scripts" / relative).resolve()
+        # Containment check — the path must stay inside the skill's
+        # scripts/ directory.
+        scripts_root = (skill_dir / "scripts").resolve()
+        try:
+            target.relative_to(scripts_root)
+        except ValueError:
+            return None
+        if not target.is_file():
+            return None
+        if target.stat().st_size > 256 * 1024:
+            return None
+        return target.read_text(encoding="utf-8", errors="replace")
+
+    def list_references(self, name: str) -> List[Path]:
+        """List paths under ``<skills_dir>/<name>/references/``."""
+        meta = self._meta.get(name)
+        if meta is None:
+            return []
+        skill_dir = meta["path"].parent  # type: ignore[arg-type]
+        ref_dir = skill_dir / "references"
+        if not ref_dir.is_dir():
+            return []
+        return sorted(ref_dir.rglob("*"))
+
+    def read_reference(self, name: str, relative: str) -> Optional[str]:
+        """Read a file under ``<skills_dir>/<name>/references/<relative>``."""
+        meta = self._meta.get(name)
+        if meta is None:
+            return None
+        skill_dir = meta["path"].parent  # type: ignore[arg-type]
+        target = (skill_dir / "references" / relative).resolve()
+        ref_root = (skill_dir / "references").resolve()
+        try:
+            target.relative_to(ref_root)
+        except ValueError:
+            return None
+        if not target.is_file():
+            return None
+        if target.stat().st_size > 256 * 1024:
+            return None
+        return target.read_text(encoding="utf-8", errors="replace")
+
     def search(self, query: str, k: int = 3) -> List[Dict[str, object]]:
         """Return top-k skill hits for ``query`` (token overlap scorer).
 

@@ -23,19 +23,28 @@ from .write_file import WriteFileTool
 from .run_tests import RunTestsTool
 from .git_diff import GitDiffTool
 from .git_apply import GitApplyTool
+from .edit import EditTool
 
 
-def _make_instances():
+def make_tool_set() -> list[BaseTool]:
+    """Return a fresh, isolated set of tool instances.
+
+    Use this when you need per-agent tool state (e.g. isolated
+    read-before-write registries). The module-level ``ALL_TOOLS`` is
+    kept for the eval harness and the in-process call path; multi-agent
+    harnesses should call this factory instead of sharing ``ALL_TOOLS``.
+    """
     return [
         ReadFileTool(),
         WriteFileTool(),
+        EditTool(),
         RunTestsTool(),
         GitDiffTool(),
         GitApplyTool(),
     ]
 
 
-ALL_TOOLS = _make_instances()
+ALL_TOOLS = make_tool_set()
 
 __all__ = [
     "BaseTool",
@@ -46,8 +55,10 @@ __all__ = [
     "BLOCKED_GIT_FRAGMENTS",
     "ReadFileTool",
     "WriteFileTool",
+    "EditTool",
     "RunTestsTool",
     "GitDiffTool",
     "GitApplyTool",
     "ALL_TOOLS",
+    "make_tool_set",
 ]

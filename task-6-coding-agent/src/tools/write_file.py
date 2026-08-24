@@ -23,9 +23,16 @@ import difflib
 import os
 import uuid
 from pathlib import Path
-from typing import Any, ClassVar, Dict, Set
+from typing import Any, ClassVar, Dict
 
-from .base import BaseTool, safe_resolve
+from .base import (
+    BaseTool,
+    has_been_read,
+    has_been_read_for,
+    mark_read,
+    mark_read_for,
+    safe_resolve,
+)
 
 
 class WriteFileTool(BaseTool):
@@ -41,7 +48,11 @@ class WriteFileTool(BaseTool):
         "properties": {
             "file_path": {
                 "type": "string",
-                "description": "Absolute path to the file (must be inside the repo root).",
+                "pattern": "^/",
+                "description": (
+                    "Absolute path to the file (must start with '/', "
+                    "and stay inside the repo root)."
+                ),
             },
             "content": {
                 "type": "string",
@@ -51,16 +62,6 @@ class WriteFileTool(BaseTool):
         "required": ["file_path", "content"],
     }
     is_read_only: ClassVar[bool] = False
-
-    # Track which files have been read — class-level so it survives across
-    # tool instantiations within the same process. The CodingAgent's hook
-    # system is the canonical place for this; we keep a minimal local
-    # mirror so direct tool calls (eval) also work.
-    _read_paths: Set[str] = set()
-
-    @classmethod
-    def mark_read(cls, abs_path: str) -> None:
-        cls._read_paths.add(abs_path)
 
     def call(self, args: Dict[str, Any], repo_root: Path) -> str:
         path_str = args["file_path"]
@@ -80,8 +81,10 @@ class WriteFileTool(BaseTool):
         if target.exists() and target.is_dir():
             return f"[ERROR] path is a directory, not a file: {path_str}"
 
-        # Read-first guard.
-        if target.exists() and str(target) not in self._read_paths:
+        # Read-first guard — consult the tool's own per-instance
+        # registry first (if any), then fall back to the module-level
+        # shared registry. Two parallel agents get isolated state.
+        if target.exists() and not has_been_read_for(str(target), self._read_paths):
             return (
                 f"[ERROR] file '{path_str}' has not been read yet. "
                 f"Call `read_file` first to load its current contents."
@@ -97,7 +100,7 @@ class WriteFileTool(BaseTool):
         tmp.write_text(content, encoding="utf-8", newline="\n")
         os.replace(tmp, target)
         # Mark as read so subsequent writes succeed without re-reading.
-        self._read_paths.add(str(target))
+        mark_read_for(str(target), self._read_paths)
 
         diff_text = _make_diff(
             target=str(target),

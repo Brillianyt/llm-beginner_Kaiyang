@@ -67,3 +67,52 @@ def default_pre_hooks() -> List[PreHook]:
         return HookDecision.ALLOW
 
     return [_block_test_writes]
+
+
+def default_post_hooks(log_path: str | Path | None = None) -> List[PostHook]:
+    """Built-in audit hooks applied to every CodingAgent by default.
+
+    * ``audit_logger`` — appends every tool call (name, args, truncated
+      observation) to a JSONL audit log so operators can replay what
+      the agent did after the fact. Defaults to
+      ``<cwd>/.coding-agent-audit.jsonl`` unless ``log_path`` is given.
+
+    Audit logs are *append-only*; the file is opened once at construction
+    so a long-running agent doesn't keep reopening. If the log directory
+    doesn't exist, this is a no-op (audit logging is best-effort).
+    """
+    import json
+    from datetime import datetime
+    from pathlib import Path
+
+    p: Path | None = None
+    fh = None
+    if log_path is not None:
+        p = Path(log_path)
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            fh = p.open("a", encoding="utf-8")
+        except OSError as e:
+            log.warning("could not open audit log %s: %s", p, e)
+            p = None
+            fh = None
+
+    def audit_logger(tool: str, args: Dict[str, Any], obs: str) -> None:
+        if fh is None:
+            return
+        try:
+            # Truncate observation to keep the audit log bounded.
+            entry = {
+                "ts": datetime.utcnow().isoformat() + "Z",
+                "tool": tool,
+                "args": {k: v for k, v in args.items() if k != "content"},
+                "content_len": len(args.get("content", "") or ""),
+                "observation_excerpt": obs[:400],
+                "observation_len": len(obs),
+            }
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            fh.flush()
+        except OSError as e:
+            log.warning("audit write failed: %s", e)
+
+    return [audit_logger]

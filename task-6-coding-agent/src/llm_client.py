@@ -43,9 +43,9 @@ class LLMClient:
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
-        timeout: float = 120.0,
+        timeout: float = 60.0,
         temperature: float = 0.1,
-        max_tokens: int = 2048,
+        max_tokens: int = 1024,
     ) -> None:
         self.base_url = base_url or os.environ.get(
             "OPENAI_BASE_URL", "http://localhost:30000/v1"
@@ -84,7 +84,7 @@ class LLMClient:
             "max_tokens": self.max_tokens if max_tokens is None else max_tokens,
         }
         if tools:
-            payload["tools"] = [{"type": "function", "function": t} for t in tools]
+            payload["tools"] = [_mcp_to_openai_tool(t) for t in tools]
             payload["tool_choice"] = tool_choice or "auto"
         log.debug("chat → %s msgs=%d tools=%d", self.model, len(messages), len(tools or []))
         try:
@@ -140,3 +140,26 @@ def make_offline_client() -> "LLMClient":
 
     client.chat = _boom  # type: ignore[assignment]
     return client
+
+
+def _mcp_to_openai_tool(t: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert an MCP-shaped tool dict to OpenAI Chat Completions shape.
+
+    MCP uses ``{name, description, inputSchema}``; OpenAI expects
+    ``{type: "function", function: {name, description, parameters}}``.
+    If ``t`` already has ``type=function``, it's passed through (we just
+    rename ``inputSchema`` → ``parameters`` defensively).
+    """
+    if t.get("type") == "function" and "function" in t:
+        fn = t["function"]
+        params = fn.get("parameters") or fn.get("inputSchema") or {}
+        return {"type": "function", "function": {
+            "name": fn.get("name", ""),
+            "description": fn.get("description", ""),
+            "parameters": params,
+        }}
+    return {"type": "function", "function": {
+        "name": t.get("name", ""),
+        "description": t.get("description", ""),
+        "parameters": t.get("inputSchema") or t.get("parameters") or {},
+    }}

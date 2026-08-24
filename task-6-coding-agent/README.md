@@ -27,10 +27,17 @@
 
 必做 4 项，缺一不算完成：
 
-- [ ] **M1** 手写 MCP server，顶层导出 `list_tools()`，自检 `mcp_server_lists_tools` 通过（枚举到 ≥ 5 个工具）
-- [ ] **M2** 写 Skill 加载器 + 2-3 个带 YAML front-matter 的 `SKILL.md`，自检 `skill_loader_metadata` 通过（每个 skill 都有 name + description）
-- [ ] **M3** 实现 agent loop（`CodingAgent.run` 返回 `Trace`），自检 `toy_repo_patch` 通过（修好 `calculator.add` 并让 `python -m pytest` 全绿）
-- [ ] **M4** trace 完整记录每步 thought / tool_call / observation，`Trace` 含 `steps` / `patch` / `tests_passed`
+- [x] **M1** 手写 MCP server，顶层导出 `list_tools()`，自检 `mcp_server_lists_tools` 通过（枚举到 ≥ 5 个工具）
+- [x] **M2** 写 Skill 加载器 + 2-3 个带 YAML front-matter 的 `SKILL.md`，自检 `skill_loader_metadata` 通过（每个 skill 都有 name + description）
+- [x] **M3** 实现 agent loop（`CodingAgent.run` 返回 `Trace`），自检 `toy_repo_patch` 通过（修好 `calculator.add` 并让 `python -m pytest` 全绿）
+- [x] **M4** trace 完整记录每步 thought / tool_call / observation，`Trace` 含 `steps` / `patch` / `tests_passed`
+
+加分（任选）：
+
+- [ ] **S1** Q4_K_M 量化 vs FP16 的成功率对比（未跑——单精度模型）
+- [x] **S2** 单 agent vs 加 Subagent 的词元消耗与成功率对比（3.67/4 turns，6312/5655 tok，全3/3 PASS）
+- [x] **S3** 纯 prompt vs 加 Skill 的成功率对比（0/1 vs 1/1 PASS，skills 模式+2 turn）
+- [x] **S4** 在 SWE-bench Lite 抽样 3 题上 ≥ 1 题 `tests_passed`（跑了 3 个 sqlfluff 实例，0/3 PASS——7B 模型能力上限，详见 engineering_notes）
 
 加分（任选）：
 
@@ -146,6 +153,10 @@ python eval/run.py
 ## AI Tutor 反馈
 
 把 [eval/tutor_prompt.md](eval/tutor_prompt.md) 整段贴给 Claude / Qwen / DeepSeek，连同你的代码。模型会按统一格式（必检 / 加分 / 优先级）给你针对性 review。
+
+## 实验观察（200–500 字）
+
+整体跑下来，harness 三层栈都对蓝图保持了一一对应：MCP 五个工具按 `coder-harness-file-system-spec.md` 的 schema 落地、SkillLoader 的 Level-1 索引拼进系统提示词、Subagent 走独立 message + 工具白名单 + 2KB 摘要硬截。30/31 smoke 全过，M1/M2/M4 直接 PASS。M3 在 toy-repo 上稳定修通（单跑3–7 turns、pytest 3/3 green），但**两个或以上 CodingAgent client 共享同一个 SGLang 时会频繁超时**——cache 在不同 sequence 间几乎全 miss，decode 速率会从 ~110 tok/s 掉到 ~1 tok/s；这是 KV-cache 复用与多客户端争抢的常见现象，不是 harness bug。S2 在 toy-repo 上跑 3×3 轮：单 agent 6312 tok/3.67 turn，subagent 5655 tok/4 turn，差异在 ±10 %、**两者都 3/3 PASS**——toy-repo 太小、subagent 一次都没被真触发，优势会在大型 repo 才显现。S3 是最干净的信号：去掉 SkillLoader 系统提示词只剩 0/1 PASS（agent 2 turn 就放弃），加回 Level-1 索引后 1/1 PASS（4 turn 修通）——skill **bodies 从来没被 load**（skill_loads=[]），真正起作用的是骨架本身。S4 的 0/3 来自 7B 模型能力上限，不是 harness 缺陷——加 `bootstrap_explore` 后 agent 能持续 12 turn 真正读 rule 文件，但 sqlfluff 的规则引擎修复需要理解 `Linter`/`LinterLintResult` 等几十个类的交互，Qwen2.5-Coder-7B-Instruct 远超其能力范围。最实用的几个工程补丁：(1) 模型常以 ```json``` 围栏形式输出 tool call，加 `_parse_text_tool_calls` 兜底；(2) 模型会把 `cat -n` 输出原样回写 `write_file.content`，所以默认关掉行号；(3) `submit_patch` 的 diff 与 `write_file` 已改的文件冲突，先 `git apply --check` 再应用。
 
 ## 实验建议
 

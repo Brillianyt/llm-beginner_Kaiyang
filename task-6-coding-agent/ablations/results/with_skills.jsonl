@@ -1,0 +1,2 @@
+{"mode": "prompt", "tests_passed": false, "done_reason": "completed", "turn_count": 2, "skill_loads": [], "compaction_events": 0, "usage": {"prompt_tokens": 3868, "completion_tokens": 354, "total_tokens": 4222}, "duration_ms": 2959, "smoke": false}
+{"mode": "skills", "tests_passed": true, "done_reason": "tests_passed", "turn_count": 4, "skill_loads": [], "compaction_events": 0, "usage": {"prompt_tokens": 5392, "completion_tokens": 430, "total_tokens": 5822}, "duration_ms": 5465, "smoke": false}

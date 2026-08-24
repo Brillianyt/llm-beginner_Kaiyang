@@ -1,0 +1,9 @@
+{"instance_id": "sqlfluff__sqlfluff-1625", "tests_passed": false, "done_reason": "tests_passed", "turn_count": 1, "prompt_tokens": 3914, "completion_tokens": 1244}
+{"instance_id": "sqlfluff__sqlfluff-1625", "tests_passed": false, "done_reason": "completed", "turn_count": 2, "prompt_tokens": 4124, "completion_tokens": 140}
+{"instance_id": "sqlfluff__sqlfluff-1625", "tests_passed": false, "done_reason": "completed", "turn_count": 1, "prompt_tokens": 5142, "completion_tokens": 160}
+{"instance_id": "sqlfluff__sqlfluff-1625", "tests_passed": false, "done_reason": "max_turns", "turn_count": 12, "prompt_tokens": 13304, "completion_tokens": 108}
+{"instance_id": "sqlfluff__sqlfluff-2419", "tests_passed": false, "done_reason": "max_turns", "turn_count": 12, "prompt_tokens": 13016, "completion_tokens": 100}
+{"instance_id": "sqlfluff__sqlfluff-1733", "tests_passed": false, "done_reason": "error", "turn_count": 1, "prompt_tokens": 0, "completion_tokens": 0}
+{"instance_id": "sqlfluff__sqlfluff-1625", "tests_passed": false, "done_reason": "max_turns", "turn_count": 14, "prompt_tokens": 14740, "completion_tokens": 134}
+{"instance_id": "sqlfluff__sqlfluff-2419", "tests_passed": false, "done_reason": "completed", "turn_count": 2, "prompt_tokens": 6704, "completion_tokens": 106}
+{"instance_id": "sqlfluff__sqlfluff-1733", "tests_passed": false, "done_reason": "completed", "turn_count": 3, "prompt_tokens": 10454, "completion_tokens": 102}

@@ -72,6 +72,10 @@ def test_toy_repo_patch():
         return {"test": "toy_repo_patch", "pass": None,
                 "skip": "calculator.py.orig snapshot missing"}
     shutil.copy(buggy, toy_repo / "calculator.py")
+    # Clear the in-process read-before-write registry so the agent must
+    # observe the buggy file via read_file before editing it.
+    from src.tools.base import clear_read_registry
+    clear_read_registry()
 
     agent = CodingAgent(skill_loader=SkillLoader(str(ROOT / "src" / "skills")))
     issue = issue_path.read_text(encoding="utf-8")

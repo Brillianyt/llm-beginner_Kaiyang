@@ -6,6 +6,12 @@ when_to_use: "Reviewing a diff for correctness, security, or style. Pre-PR sanit
 
 # Code Review
 
+## Available resources
+- `scripts/diff_stats.py` — quick file-level +/−/files-touched summary.
+  Run it via `run_bash`: `python <skill_dir>/scripts/diff_stats.py <diff>`.
+- `references/review-checklist.md` — severity rubric + common smells.
+  Read it via the SkillLoader's `read_reference` for detailed grading.
+
 ## When to use this skill
 - After `git_diff` shows non-trivial changes.
 - Before submitting a patch.
@@ -14,21 +20,22 @@ when_to_use: "Reviewing a diff for correctness, security, or style. Pre-PR sanit
 ## Inputs you receive
 - `repo_path`: absolute path to repo.
 - `diff`: unified diff (from `git_diff`).
-- Optional `focus`: `correctness | performance | security | style`.
+- Optional `focus`: e.g. correctness | performance | security | style.
 
 ## Steps
-1. Read each hunk with ≥ 10 lines of surrounding context.
-2. Classify each finding:
+1. (Optional) Run `scripts/diff_stats.py` for a one-line overview.
+2. Read each hunk with ≥ 10 lines of surrounding context.
+3. Classify each finding:
    - **must-fix** — bug, security issue, data loss, broken test.
    - **should-fix** — clear style/idiom violation with cited reason.
    - **nit** — subjective; mention only if asked.
-3. Produce a review in this shape:
+4. Produce a review in this shape:
 
    - **Summary** (1–2 sentences)
    - **Findings** (bullets: severity, file:line, why, suggested fix)
    - **Praise** (1–3 bullets, brief)
 
-4. If no issues: say "No issues found" + one sentence why.
+5. If no issues: say "No issues found" + one sentence why.
 
 ## Output format
 Markdown only, no preamble. Maximum 30 findings per call.

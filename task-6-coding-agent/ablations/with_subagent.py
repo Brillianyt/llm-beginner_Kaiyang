@@ -55,18 +55,10 @@ def main() -> int:
     issue = (repo / "ISSUE.md").read_text(encoding="utf-8")
 
     try:
-        agent = CodingAgent()
+        agent = CodingAgent(enable_subagents=(args.mode == "sub"))
     except LLMError as e:
         print(f"[skip] LLM init failed: {e}")
         return 0
-
-    if args.mode == "single":
-        # Remove subagent tools entirely so the LLM cannot delegate.
-        # The dispatch_subagent tool still exists in the schema but
-        # we filter its usage by removing it from the schema.
-        agent._tool_schemas = [
-            s for s in agent._tool_schemas if s.get("name") != "dispatch_subagent"
-        ]
 
     start = time.time()
     try:
@@ -77,14 +69,9 @@ def main() -> int:
         return 0
     duration = int((time.time() - start) * 1000)
 
-    # Token accounting — we only see prompt/completion totals per turn,
-    # so accumulate from the trace.
-    total_prompt = 0
-    total_completion = 0
-    last_usage = trace.get("last_usage", {})
-    if isinstance(last_usage, dict):
-        total_prompt = last_usage.get("prompt_tokens", 0)
-        total_completion = last_usage.get("completion_tokens", 0)
+    # Token accounting — CodingAgent now accumulates prompt/completion
+    # tokens across all turns into ``trace["token_usage"]``.
+    usage = trace.get("token_usage") or {}
 
     record = {
         "mode": args.mode,
@@ -93,8 +80,9 @@ def main() -> int:
         "turn_count": trace.get("turn_count"),
         "tool_call_count": trace.get("tool_call_count"),
         "subagent_invocations": len(trace.get("subagent_invocations") or []),
-        "prompt_tokens_last_turn": total_prompt,
-        "completion_tokens_last_turn": total_completion,
+        "prompt_tokens": int(usage.get("prompt_tokens", 0) or 0),
+        "completion_tokens": int(usage.get("completion_tokens", 0) or 0),
+        "total_tokens": int(usage.get("total_tokens", 0) or 0),
         "duration_ms": duration,
         "smoke": args.smoke,
     }
