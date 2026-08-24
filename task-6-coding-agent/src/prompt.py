@@ -65,6 +65,22 @@ TERMINATION_PROTOCOL = (
     "1. Fix complete? → call `submit_patch(diff, summary)` exactly once.\n"
     "2. Stuck? → call `submit_text(text)` to stop.\n"
     "3. Never edit test files (`test_*.py`, `*_test.py`, `*/tests/*`).\n"
+    "\n"
+    "Edit discipline:\n"
+    "- Make the MINIMUM change that fixes the bug. NEVER rename\n"
+    "  existing functions, NEVER add recursive variants, NEVER\n"
+    "  refactor surrounding code. The fix is almost always a\n"
+    "  one-line change to a buggy existing line.\n"
+    "- If `edit` fails with 'old_string not found', DO NOT keep\n"
+    "  retrying the same edit. Re-read the file and find the EXACT\n"
+    "  line (including leading whitespace) you want to change.\n"
+    "- After your edit succeeds, call `run_tests` to verify. If\n"
+    "  the FAIL_TO_PASS test passes, STOP editing immediately and\n"
+    "  call `submit_patch`. Do not make further edits.\n"
+    "- Bug-location heuristics: read the file; the issue text often\n"
+    "  names the buggy function. For matrix / numeric bugs check\n"
+    "  indexing and `np.zeros` initial-value assignment; for\n"
+    "  case-sensitivity bugs prefer `re.IGNORECASE` on `re.compile`.\n"
 )
 
 SUBAGENT_PROTOCOL = (
