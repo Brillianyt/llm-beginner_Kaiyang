@@ -24,6 +24,8 @@ from .run_tests import RunTestsTool
 from .git_diff import GitDiffTool
 from .git_apply import GitApplyTool
 from .edit import EditTool
+from .list_files import ListFilesTool
+from .grep import GrepTool
 
 
 def make_tool_set() -> list[BaseTool]:
@@ -38,6 +40,8 @@ def make_tool_set() -> list[BaseTool]:
         ReadFileTool(),
         WriteFileTool(),
         EditTool(),
+        ListFilesTool(),
+        GrepTool(),
         RunTestsTool(),
         GitDiffTool(),
         GitApplyTool(),
@@ -56,6 +60,8 @@ __all__ = [
     "ReadFileTool",
     "WriteFileTool",
     "EditTool",
+    "ListFilesTool",
+    "GrepTool",
     "RunTestsTool",
     "GitDiffTool",
     "GitApplyTool",

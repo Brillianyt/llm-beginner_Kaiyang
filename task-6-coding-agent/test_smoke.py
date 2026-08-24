@@ -101,6 +101,37 @@ class TestToolSafety(unittest.TestCase):
     def test_safe_git_allowed(self):
         self.assertIsNone(check_blocked_git(["git", "--no-pager", "diff"]))
 
+    def test_list_files_accepts_absolute_path_inside_repo(self):
+        """list_files must accept the absolute path the model naturally
+        passes (read_file / write_file / edit all require absolute), and
+        reject only paths that escape the repo."""
+        from src.tools import ListFilesTool
+        tool = ListFilesTool()
+        # Absolute path to repo root → should work.
+        r = tool({"path": str(self.repo)}, self.repo)
+        self.assertNotIn("absolute path rejected", r.content)
+        self.assertIn("calculator.py", r.content)
+        # Escape attempt → rejected.
+        r2 = tool({"path": "/etc"}, self.repo)
+        self.assertIn("escapes repo root", r2.content)
+
+    def test_read_file_not_found_hints_list_files(self):
+        """A missing file must hint `list_files` instead of a bare error —
+        bare errors make 7B models loop guessing filenames."""
+        target = (self.repo / "definitely_missing.py").resolve()
+        tool = ReadFileTool()
+        r = tool({"file_path": str(target)}, self.repo)
+        self.assertIn("file not found", r.content)
+        self.assertIn("list_files", r.content,
+                      "not-found error should suggest list_files exploration")
+
+    def test_system_prompt_mentions_list_files(self):
+        """System prompt hard rules must instruct explore-before-read."""
+        from src.prompt import build_system_prompt
+        p = build_system_prompt(repo_root=str(self.repo), max_turns=5)
+        self.assertIn("list_files", p)
+        self.assertIn("Explore before you read", p)
+
     def test_git_apply_rolls_back_on_failure(self):
         """A patch that fails after partially writing must leave the
         working tree byte-identical to its pre-call state."""

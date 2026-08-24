@@ -95,7 +95,16 @@ class ReadFileTool(BaseTool):
         target = p.resolve(strict=False)
 
         if not target.exists():
-            return f"[ERROR] file not found: {path_str}"
+            # Give the model a constructive next step instead of a bare
+            # error — a bare "file not found" makes models (especially
+            # 7B-class) loop guessing filenames forever.
+            return (
+                f"[ERROR] file not found: {path_str}\n"
+                f"[HINT] if you are guessing a path, use `list_files` "
+                f"(or `list_files` with a subdirectory) to discover the "
+                f"actual file layout under {repo_root} instead of "
+                f"guessing filenames."
+            )
         if not target.is_file():
             return f"[ERROR] not a regular file: {path_str}"
         # Record this read so a later write_file/edit is allowed.

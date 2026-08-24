@@ -151,7 +151,7 @@ class CodingAgent:
         # Bootstrap exploration — for big repos the model needs to see
         # the directory layout before deciding what to read.
         if self.bootstrap_explore:
-            bootstrap_obs = self._bootstrap_explore(repo_root)
+            bootstrap_obs = self._bootstrap_explore(repo_root, issue)
             messages.append({"role": "assistant", "content": ""})
             messages.append({"role": "user", "content": bootstrap_obs})
 
@@ -363,7 +363,7 @@ class CodingAgent:
         obs = self.hooks.fire_post(name, args, obs)
         return obs, result.is_error
 
-    def _bootstrap_explore(self, repo_root: Path) -> str:
+    def _bootstrap_explore(self, repo_root: Path, issue: str = "") -> str:
         """Return a structured snapshot of the repo for the first model turn.
 
         Uses this agent's *private* tool set (via ``self._tools_by_name``)
@@ -377,9 +377,27 @@ class CodingAgent:
         ]
         list_tool = self._tools_by_name["list_files"]
         read_tool = self._tools_by_name["read_file"]
-        tree = list_tool({"path": ".", "max_depth": 2}, repo_root)
+        # Depth 3 exposes src/<pkg>/<sub>/ for standard repo layouts, so
+        # the model can see rule/parser/plugin files on the first turn
+        # instead of guessing their path.
+        tree = list_tool({"path": ".", "max_depth": 3}, repo_root)
         lines.append(tree.content)
         lines.append("")
+        # Grep for likely-relevant identifiers (L031 / rule / test names)
+        # so the model learns file locations immediately, rather than
+        # guessing. Cheap, read-only, and hugely effective on SWE-bench
+        # style issues.
+        if "grep" in self._tools_by_name:
+            grep_tool = self._tools_by_name["grep"]
+            # Extract a rule-id hint like "L031" from the issue, else
+            # fall back to a generic "rule" search.
+            m = re.search(r"\bL(\d{3})\b", issue or "")
+            hint = f"L{m.group(1)}" if m else "rule"
+            g = grep_tool({"pattern": hint, "output_mode": "files_with_matches",
+                           "path": "."}, repo_root)
+            lines.append(f"=== grep '{hint}' (files) ===")
+            lines.append(g.content)
+            lines.append("")
         # Sniff for any README that mentions "tests" / "build".
         for candidate in ("README.md", "README.rst", "Readme.md"):
             p = repo_root / candidate

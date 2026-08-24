@@ -2,7 +2,9 @@
 
 Per file-system-spec §3 / blueprint Part I §1.3:
 
-* default command: ``python -m pytest -x --tb=short``,
+* default command: ``python -m pytest --tb=short`` — deliberately NOT
+  ``-x`` (fail-fast): on SWE-bench-sized repos an unrelated early failure
+  would hide the target test's result from the agent.
 * parses pytest output into ``passed / failed / errors`` and a
   ``failures[]`` array of ``{file, line, test, msg}``,
 * truncates stdout/stderr to a tail,
@@ -34,8 +36,10 @@ class RunTestsTool(BaseTool):
     name: ClassVar[str] = "run_tests"
     description: ClassVar[str] = (
         "Runs the project's test suite and returns structured pass/fail counts "
-        "plus a per-test failure list. Defaults to `python -m pytest -x --tb=short`. "
-        "Never executes a shell — commands are always passed as argv lists."
+        "plus a per-test failure list. Defaults to `python -m pytest --tb=short` "
+        "(NOT -x: on big repos an unrelated first failure would hide the "
+        "target test's result). Never executes a shell — commands are "
+        "always passed as argv lists."
     )
     input_schema: ClassVar[Dict[str, Any]] = {
         "type": "object",
@@ -43,7 +47,7 @@ class RunTestsTool(BaseTool):
             "cmd": {
                 "type": "string",
                 "description": (
-                    "Override command (default: 'python -m pytest -x --tb=short'). "
+                    "Override command (default: 'python -m pytest --tb=short'). "
                     "The string is split on whitespace; quote segments you "
                     "want kept together."
                 ),
@@ -84,7 +88,7 @@ class RunTestsTool(BaseTool):
     )
 
     def call(self, args: Dict[str, Any], repo_root: Path) -> str:
-        cmd_str = args.get("cmd") or "python -m pytest -x --tb=short"
+        cmd_str = args.get("cmd") or "python -m pytest --tb=short"
         cwd_str = args.get("cwd") or str(repo_root)
         timeout = int(args.get("timeout_s") or 300)
         cwd = Path(cwd_str)
@@ -96,9 +100,9 @@ class RunTestsTool(BaseTool):
             return f"[ERROR] cwd not found: {cwd_str}"
         # argv split (very simple — supports quoted args).
         argv = _split(cmd_str)
-        argv = [sys.executable, "-m", "pytest", "-x", "--tb=short"] if argv == ["pytest"] else argv
+        argv = [sys.executable, "-m", "pytest", "--tb=short"] if argv == ["pytest"] else argv
         if not argv:
-            argv = [sys.executable, "-m", "pytest", "-x", "--tb=short"]
+            argv = [sys.executable, "-m", "pytest", "--tb=short"]
         # Validate extra_args and append.
         extra = args.get("extra_args") or []
         if not isinstance(extra, list) or not all(isinstance(s, str) for s in extra):
