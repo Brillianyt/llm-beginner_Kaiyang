@@ -16,7 +16,7 @@
 *.npz filter=lfs diff=lfs merge=lfs -text
 *.onnx filter=lfs diff=lfs merge=lfs -text
 *.ot filter=lfs diff=lfs merge=lfs -text
-*.parquet filter=lfs diff=lfs merge=lfs -text
+# *.parquet filter=lfs diff=lfs merge=lfs -text  # DISABLED (2026-08-25): these blobs are stored RAW in git history (no LFS objects exist); keeping the filter active re-cleans them into dangling LFS pointers on machines with git-lfs installed.
 *.pb filter=lfs diff=lfs merge=lfs -text
 *.pickle filter=lfs diff=lfs merge=lfs -text
 *.pkl filter=lfs diff=lfs merge=lfs -text
