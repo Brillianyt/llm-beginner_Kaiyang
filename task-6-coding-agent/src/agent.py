@@ -158,6 +158,7 @@ class CodingAgent:
         done_reason: DoneReason = DoneReason.MAX_TURNS
         # Stuck-loop detector — see agent.py line ~320.
         self._recent_signatures: list[str] = []
+        self._recent_test_summaries: list[str] = []
 
         for turn in range(1, self.max_turns + 1):
             trace["turn_count"] = turn
@@ -278,6 +279,20 @@ class CodingAgent:
                 obs, error = self._dispatch(name, args, repo_root)
                 duration_ms = int((time.time() - t0) * 1000)
 
+                # Track recently-edited files so ``run_tests`` can
+                # scope pytest to the right module instead of dumping
+                # unrelated ``astropy/tests/tests/`` dependency errors
+                # on the model.  Only update on success so a failed
+                # edit doesn't mis-scope the next run_tests.
+                if name in ("edit", "write_file") and not error and isinstance(args, dict):
+                    fp = args.get("file_path")
+                    if fp:
+                        try:
+                            from src.tools.run_tests import set_recent_edit
+                            set_recent_edit(fp)
+                        except ImportError:
+                            pass
+
                 trace.append(TraceStep(kind=StepKind.TOOL_CALL, payload={
                     "name": name, "arguments": args, "duration_ms": duration_ms,
                 }))
@@ -304,10 +319,21 @@ class CodingAgent:
                     break
             if stop_loop:
                 break
-            # Stuck-loop detection: 3 consecutive tool calls with the
-            # same ``(name, json_args)`` signature → force end.  This
-            # mirrors Claude Code's 5-step no-insight heuristic but is
-            # tighter because Qwen2.5-Coder-7B spins faster than Opus.
+            # Stuck-loop detection (two complementary heuristics, both
+            # inspired by Claude Code's 5-step no-insight detector):
+            #
+            # 1. Same-tool-signature lock: 3 consecutive tool calls with
+            #    identical (name, args) → model is hitting the same
+            #    endpoint with the same request (e.g. retrying the
+            #    same failing edit).
+            #
+            # 2. No-test-progress lock: 3 consecutive ``run_tests``
+            #    calls produce the SAME summary line (``passed=N
+            #    failed=M errors=K``).  This catches the subtle case
+            #    where the model keeps editing the file but the
+            #    *failure surface* is unchanged — i.e. the edit is
+            #    cosmetic (renames, format-string tweaks, docstring
+            #    additions) and not actually fixing the bug.
             sig = "|".join(
                 f"{t['function']['name']}:{json.dumps(t['function']['arguments'], sort_keys=True, default=str)}"
                 for t in msg.tool_calls
@@ -317,6 +343,40 @@ class CodingAgent:
                 done_reason = DoneReason.STUCK
                 log.info("stuck-loop detected: same tool signature 3 turns in a row")
                 break
+            # Heuristic 2: capture run_tests summary line and detect
+            # ``run_tests → run_tests → run_tests`` with no change in
+            # the pass/fail/error counts.  When this happens 3 times in
+            # a row, the model is making cosmetic edits and the test
+            # surface is unchanged → force end with a hint.
+            test_summary_sig = None
+            for tc in msg.tool_calls:
+                fn = tc["function"]
+                if fn["name"] == "run_tests":
+                    # Pull the summary line ``exit_code=N passed=N
+                    # failed=M errors=K`` from the prior tool-response
+                    # for this tool_call_id (if any).
+                    for prior in messages[-6:]:
+                        if (prior.get("role") == "tool"
+                            and prior.get("tool_call_id") == tc.get("id")):
+                            for ln in prior.get("content", "").splitlines():
+                                if ln.startswith("exit_code="):
+                                    test_summary_sig = ln
+                                    break
+                            break
+            if test_summary_sig is not None:
+                self._recent_test_summaries.append(test_summary_sig)
+                if (len(self._recent_test_summaries) >= 3
+                    and len(set(self._recent_test_summaries[-3:])) == 1):
+                    done_reason = DoneReason.STUCK
+                    log.info(
+                        "stuck-loop detected: run_tests summary unchanged "
+                        "for 3 turns in a row (%s). Edits are not "
+                        "changing the failure surface — likely cosmetic. "
+                        "Hint: revisit the bug location rather than "
+                        "tweaking error messages / formatting.",
+                        test_summary_sig,
+                    )
+                    break
         # end for turn
 
         # Verify the patch (re-run tests) before finalising.

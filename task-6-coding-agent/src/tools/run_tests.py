@@ -51,9 +51,28 @@ import shutil
 import sys
 import time
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List
+from typing import Any, ClassVar, Dict, List, Optional
 
 from .base import BaseTool, run_subprocess
+
+# When ``edit`` (or ``write_file``) successfully changes a file, the
+# agent loop records the path here via ``set_recent_edit``.
+# ``run_tests`` reads it to scope pytest to that file's test module
+# instead of running the whole package's ``tests/`` directory.
+# This avoids the flood of unrelated test failures (e.g. ``test_imports``
+# requires ``pytest_remotedata`` which isn't installed) that confuses
+# the model into thinking the test infrastructure is broken.
+RECENT_EDIT_FILE: Optional[str] = None
+
+
+def set_recent_edit(path: str) -> None:
+    global RECENT_EDIT_FILE
+    RECENT_EDIT_FILE = path
+
+
+def clear_recent_edit() -> None:
+    global RECENT_EDIT_FILE
+    RECENT_EDIT_FILE = None
 
 
 class RunTestsTool(BaseTool):
@@ -164,10 +183,17 @@ class RunTestsTool(BaseTool):
         # patch.
         wheel_test_patch = os.environ.get("WHEEL_TEST_PATCH_FILE")
         # Detect whether the model passed an explicit test path in
-        # ``extra_args``.  If not, we scope pytest to the package's
-        # ``tests/`` directory instead of the whole mirror — otherwise
-        # pytest tries to collect numpy/scipy tests too and hits a
-        # network error during astropy's data download.
+        # ``extra_args``.  If not, we scope pytest to the file being
+        # edited (if any) — otherwise pytest tries to collect numpy/scipy
+        # tests too and hits a network error during astropy's data
+        # download, AND the model sees a flood of unrelated test
+        # failures (e.g. astropy/tests/tests/test_imports.py requires
+        # ``pytest_remotedata`` which isn't installed) that confuses
+        # the model into thinking the test infrastructure is broken.
+        #
+        # ``recent_edit_file`` is set externally by the agent loop
+        # after every successful ``edit`` tool call; it records the
+        # last file the model touched so ``run_tests`` can scope there.
         has_explicit_test_path = any(
             not a.startswith("-") for a in extra
         ) or any(
@@ -238,11 +264,53 @@ class RunTestsTool(BaseTool):
                     a for a in argv[3:] if not a.startswith("--rootdir=")
                 ]
                 # Scope to <pkg>/tests/ by default so we don't collect
-                # numpy/scipy tests too.
+                # numpy/scipy tests too.  When the model is editing a
+                # specific file (tracked by ``RECENT_EDIT_FILE``), scope
+                # to that file's test module so the model sees its
+                # actual FAIL_TO_PASS signal instead of a flood of
+                # unrelated dependency errors.
                 if not has_explicit_test_path:
-                    tests_dir = dst_pkg / "tests"
-                    if tests_dir.is_dir():
-                        argv.append(str(tests_dir))
+                    target_test = None
+                    if RECENT_EDIT_FILE:
+                        # Map the source path the model just edited
+                        # (e.g. ``astropy/io/ascii/qdp.py``) to the
+                        # wheel's matching test module
+                        # (``astropy/io/ascii/tests/test_qdp.py``).
+                        try:
+                            src_rel = Path(RECENT_EDIT_FILE).relative_to(repo_root)
+                            # src_rel starts with the package name
+                            # (``astropy``); strip it so the inside-pkg
+                            # path (``io/ascii/qdp.py``) can be
+                            # re-anchored under the wheel's
+                            # ``<mirror_root>/<mirror_pkg>``.
+                            if src_rel.parts[0] == mirror_pkg:
+                                inside_pkg = Path(*src_rel.parts[1:])
+                                candidate = (
+                                    mirror_root / mirror_pkg
+                                    / inside_pkg.parent
+                                    / "tests"
+                                    / ("test_" + inside_pkg.name)
+                                )
+                                if candidate.exists():
+                                    target_test = str(candidate)
+                                else:
+                                    # Fall back to package-level
+                                    # ``<mirror>/<pkg>/tests/``.
+                                    candidate = (
+                                        mirror_root / mirror_pkg
+                                        / "tests"
+                                        / ("test_" + inside_pkg.name)
+                                    )
+                                    if candidate.exists():
+                                        target_test = str(candidate)
+                        except ValueError:
+                            pass
+                    if target_test:
+                        argv.append(target_test)
+                    else:
+                        tests_dir = dst_pkg / "tests"
+                        if tests_dir.is_dir():
+                            argv.append(str(tests_dir))
                 else:
                     # The model specified a test path.  Resolve any
                     # RELATIVE path against the package's directory
