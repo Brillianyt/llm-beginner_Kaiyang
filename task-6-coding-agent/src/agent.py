@@ -120,6 +120,12 @@ class CodingAgent:
 
         # current_trace (set per run) — meta-tools write into it.
         self._current_trace: Optional[Trace] = None
+        # Active skill — set by ``load_skill``, cleared by ``submit_*``.
+        # When non-None, ``_dispatch`` enforces the skill's
+        # ``allowed-tools`` allowlist.  This is how we make the
+        # ``allowed-tools`` frontmatter field actually do something
+        # (previously it was parsed but never checked).
+        self._active_skill: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Public
@@ -446,9 +452,30 @@ class CodingAgent:
                 return "[ERROR] subagents disabled", True
             return self._handle_dispatch_subagent(args, repo_root), False
         if name == "submit_patch":
+            # submit_patch clears any active skill — the agent is
+            # committing to a fix and the gating context no longer applies.
+            self._active_skill = None
             return ("patch queued; will verify after loop ends", False), False  # never reached (handler short-circuits)
         if name == "submit_text":
+            self._active_skill = None
             return ("text queued; will stop after loop ends", False), False
+
+        # Skill allowlist — if a skill is active and declares
+        # ``allowed-tools``, tools outside that list are rejected.
+        # The skill's own load_skill was already allowed (it's a
+        # meta-tool, handled above) — switching to a different skill
+        # via load_skill is also implicitly allowed (clears + resets).
+        if (self._active_skill is not None
+                and self.skill_loader is not None
+                and name != "load_skill"):
+            allow = self.skill_loader.allowed_tools(self._active_skill)
+            if allow is not None and name not in allow:
+                return (
+                    f"[ERROR] tool '{name}' not in skill "
+                    f"'{self._active_skill}' allowlist "
+                    f"(allowed: {allow})",
+                    True,
+                )
 
         # Pre-tool hook.
         decision, args = self.hooks.fire_pre(name, args)
@@ -523,6 +550,11 @@ class CodingAgent:
                 loads = list(self._current_trace.get("skill_loads") or [])
                 loads.append(name)
                 self._current_trace["skill_loads"] = loads
+            # Activate the skill so ``_dispatch`` can enforce its
+            # ``allowed-tools`` allowlist.  The skill stays active
+            # until ``submit_patch`` / ``submit_text`` / ``load_skill``
+            # of a different name clears it.
+            self._active_skill = name
             return body
         except KeyError:
             return f"[ERROR] skill not found: {name}"

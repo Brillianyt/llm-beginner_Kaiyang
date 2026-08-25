@@ -37,7 +37,8 @@ src/
 │   ├── edit.py             # old_string/new_string 替换 + unique/replace_all
 │   ├── run_tests.py        # pytest 结构化解析（passed/failed/failures[]）
 │   ├── git_diff.py         # per-file patch + secret 文件 redact
-│   └── git_apply.py        # --check + 真 apply + 失败时 snapshot rollback
+│   ├── git_apply.py        # --check + 真 apply + 失败时 snapshot rollback
+│   └── run_bash.py         # sandboxed subprocess: shlex + deny-list + path 沙箱
 ├── subagents/              # 独立 message + 步数上限 + 工具白名单 + 2KB 摘要硬截
 │   ├── base.py
 │   ├── search_executor.py  # 仅 read_file（read-only）

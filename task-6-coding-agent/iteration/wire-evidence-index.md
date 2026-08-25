@@ -41,6 +41,10 @@
 - `stuck_detector_14365__20260825T021926Z.json` — 修复 C + D 后 8 turn 达到 PASS（含 golden fix）
 - `final_12907__20260824T163151Z.json` — 12907 PASS 的最终 wire
 
+### f7e9a1b — `run_bash` 端到端
+
+- `run_bash_e2e__20260825T105623Z.json` — 模型 6 turn 5 次调 `run_bash`，全部被 path 沙箱正确拦截（绝对路径 + `/path/to/` 占位符）；最终 `done_reason=stuck`（同 signature lock 触发）
+
 ### Early ablations（更早的探索，未关联具体 commit）
 
 - `astropy_14365_explore_guard__20260824T151326Z.json`

@@ -66,6 +66,22 @@ class SkillLoader:
     def get_meta(self, name: str) -> Optional[Dict[str, object]]:
         return self._meta.get(name)
 
+    def allowed_tools(self, name: str) -> Optional[List[str]]:
+        """Return the ``allowed-tools`` list for a skill, or ``None`` if
+        the skill doesn't declare one (which means "no restriction").
+
+        Used by ``CodingAgent._dispatch`` to gate tool calls while a
+        skill is loaded.  See ``iteration/08-allowed-tools-and-scripts-reachable.md``
+        for the rationale.
+        """
+        meta = self._meta.get(name)
+        if meta is None:
+            return None
+        tools = meta.get("allowed_tools")
+        if not tools:
+            return None
+        return list(tools)
+
     # ------------------------------------------------------------------
     # Lazy resources — the agent can read scripts / references on
     # demand, mirroring Anthropic's Skills design (blueprint Part II §2.3).

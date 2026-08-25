@@ -86,9 +86,16 @@ def safe_resolve(path: str | os.PathLike, repo_root: Path) -> Path:
     p = Path(path)
     if p.is_absolute():
         raise PermissionError(f"absolute path rejected: {path}")
-    candidate = (repo_root / p).resolve(strict=False)
+    # Resolve ``repo_root`` first so a relative ``repo_root`` (e.g.
+    # ``Path('.')``) is compared apples-to-apples with the resolved
+    # candidate.  Without this, ``relative_to`` would compare a
+    # resolved absolute candidate against an unresolved ``.`` and
+    # spuriously fail.  Locked in by ``test_safe_resolve_handles_relative_repo_root``
+    # in test_smoke.py.
+    resolved_root = repo_root.resolve(strict=False)
+    candidate = (resolved_root / p).resolve(strict=False)
     try:
-        candidate.relative_to(repo_root)
+        candidate.relative_to(resolved_root)
     except ValueError as e:
         raise PermissionError(f"path escapes repo root: {path}") from e
     return candidate

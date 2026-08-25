@@ -15,6 +15,7 @@
 - **`_PATCH_FENCE_RE` 漏 `python` 围栏**（`662ba97` Bug B）— regex alternative 从 `(diff|patch)?` 改成 `(diff|patch|python|py)?`；agent 现在能提取 ```python``` 围栏的 fix-as-text
 - **`run_tests` 默认 scope 太宽**（`99ffaeb` Bug C）— 引入 `RECENT_EDIT_FILE` 模块全局；agent loop 在 edit/write_file 成功后调 `set_recent_edit`；run_tests 在 `extra_args` 空时自动缩窄到 `<mirror>/<pkg>/<sub>/tests/test_<name>.py`
 - **stuck 检测器抓不到 cosmetic edit**（`99ffaeb` Bug D）— 增加 test-summary lock：3 连续相同 `exit_code=N passed=N failed=M errors=K` summary → `done_reason=stuck` + hint "edits are cosmetic, revisit bug location"
+- **`run_bash` 缺失 + skill `allowed-tools` 不强制**（`f7e9a1b`）— 新增 sandboxed `run_bash`（shlex + deny-list + path 沙箱）；`_active_skill` 字段 + `_dispatch` allowlist 检查；修复 `safe_resolve` 在 `Path('.')` repo_root 下误判相对路径为逃逸
 
 ## 技术债
 

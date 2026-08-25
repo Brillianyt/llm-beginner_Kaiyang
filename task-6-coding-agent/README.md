@@ -39,12 +39,6 @@
 - [x] **S3** 纯 prompt vs 加 Skill 的成功率对比（0/1 vs 1/1 PASS，skills 模式+2 turn）
 - [x] **S4** 在 SWE-bench Lite 抽样 3 题上 ≥ 1 题 `tests_passed`（2026-08-25 astropy 实例 **2/3 PASS**：12907 + 14365，`tool_call_native_rate=1.0` / `fallback_markers=[]`；详见 [`iteration/`](./iteration/README.md)）
 
-加分（任选）：
-
-- [ ] **S1** Q4_K_M 量化 vs FP16 的成功率对比
-- [ ] **S2** 单 agent vs 加 Subagent 的词元消耗与成功率对比
-- [ ] **S3** 纯 prompt vs 加 Skill 的成功率对比
-- [ ] **S4** 在 SWE-bench Lite 抽样 3 题上 ≥ 1 题 `tests_passed`（很难，跑通 1 题就合格）
 
 ## 实施步骤（建议节奏：5-6 周）
 

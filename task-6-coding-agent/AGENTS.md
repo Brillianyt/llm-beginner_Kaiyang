@@ -82,7 +82,7 @@ signal that the parser plugin is misconfigured (`tool_call_native_rate`
 - `src/llm_client.py` — OpenAI-compatible wire layer.
 - `src/mcp_server.py` — stdio MCP server (exposes `read_file`,
   `write_file`, `edit`, `list_files`, `grep`, `run_tests`, `git_diff`,
-  `git_apply`).
+  `git_apply`, `run_bash`).
 - `src/skill_loader.py` + `src/skills/<name>/SKILL.md` — Skills.
 - `src/subagents/{search,test}_executor.py` — Subagents.
 - `src/vllm_plugin/qwen_coder_tool_parser.py` — Server-side tool-call

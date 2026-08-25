@@ -6,6 +6,8 @@ Per blueprint Part I, the registered tools are:
   * run_tests    — structured pytest runner
   * git_diff     — per-file unified diffs
   * git_apply    — apply / dry-run a unified diff
+  * run_bash     — sandboxed subprocess runner (shlex + path containment
+                   + deny-list for destructive commands)
 
 All tools are stateless, raise through ``BaseTool.__call__`` (never
 through MCP), and use :func:`safe_resolve` for path safety.
@@ -26,6 +28,7 @@ from .git_apply import GitApplyTool
 from .edit import EditTool
 from .list_files import ListFilesTool
 from .grep import GrepTool
+from .run_bash import RunBashTool
 
 
 def make_tool_set() -> list[BaseTool]:
@@ -45,6 +48,7 @@ def make_tool_set() -> list[BaseTool]:
         RunTestsTool(),
         GitDiffTool(),
         GitApplyTool(),
+        RunBashTool(),
     ]
 
 
@@ -65,6 +69,7 @@ __all__ = [
     "RunTestsTool",
     "GitDiffTool",
     "GitApplyTool",
+    "RunBashTool",
     "ALL_TOOLS",
     "make_tool_set",
 ]
