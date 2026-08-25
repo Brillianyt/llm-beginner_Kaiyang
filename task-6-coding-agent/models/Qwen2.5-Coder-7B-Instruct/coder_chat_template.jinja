@@ -1,0 +1,58 @@
+{%- if not add_generation_prompt is defined %}{%- set add_generation_prompt = false %}{%- endif %}
+{%- if messages[0]['role'] == 'system' %}
+    {%- set system_message = messages[0]['content'] %}
+    {%- set loop_messages = messages[1:] %}
+{%- else %}
+    {%- set loop_messages = messages %}
+    {%- set system_message = "You are a helpful coding assistant." %}
+{%- endif %}
+{{- '<|im_start|>system\n' }}
+{%- if tools is defined and tools %}
+    {{- "<|tools|>" ~ tools | tojson ~ "<|/tools|>" }}
+{%- endif %}
+{{- 'You may output a SHORT reasoning sentence (1-2 lines max) BEFORE the JSON object to plan your next step. After the reasoning, output exactly one JSON object describing the tool call. Do NOT use code fences inside the JSON object.\n' }}
+{{- system_message }}
+{{- '<|im_end|>\n' }}
+{%- for message in loop_messages %}
+    {%- if (message['role'] == 'user') or (message['role'] == 'system') %}
+        {{- '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n' }}
+    {%- elif message['role'] == 'tool' %}
+        {%- if loop.first and system_message is defined %}
+            {{- '<|im_start|>user\n' }}
+        {%- endif %}
+        {{- '<|im_start|>tool\n' + message['content'] + '<|im_end|>\n' }}
+    {%- elif message['role'] == 'assistant' %}
+        {{- '<|im_start|>assistant\n' }}
+        {%- if message['content'] %}
+            {{- message['content'] }}
+        {%- endif %}
+        {%- if message.tool_calls is defined %}
+            {%- set tool_calls = message.tool_calls %}
+            {%- if tool_calls|length > 1 %}
+                {{- '\n[' }}
+            {%- else %}
+                {{- '\n' }}
+            {%- endif %}
+            {%- for tool_call in tool_calls %}
+                {%- if tool_call.function is defined %}
+                    {%- set tool_call = tool_call.function %}
+                {%- endif %}
+                {{- '{"name": "' }}
+                {{- tool_call.name }}
+                {{- '", "arguments": ' }}
+                {{- tool_call.arguments | tojson }}
+                {{- '}' }}
+                {%- if not loop.last %}
+                    {{- ', ' }}
+                {%- endif %}
+            {%- endfor %}
+            {%- if tool_calls|length > 1 %}
+                {{- ']' }}
+            {%- endif %}
+        {%- endif %}
+        {{- '<|im_end|>\n' }}
+    {%- endif %}
+{%- endfor %}
+{%- if add_generation_prompt %}
+    {{- '<|im_start|>assistant\n' }}
+{%- endif %}
