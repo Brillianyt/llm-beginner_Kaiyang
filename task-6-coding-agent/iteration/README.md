@@ -15,7 +15,8 @@
 | 7 | [`06-recent-edit-scope-and-summary-lock.md`](./06-recent-edit-scope-and-summary-lock.md) | `99ffaeb` | **Bug C**：`run_tests` 默认范围淹没模型；**Bug D**：stuck 检测器抓不到"修改文案而非 bug" |
 | 8 | [`07-final-state-and-swe-pass.md`](./07-final-state-and-swe-pass.md) | — | 最终 harness 状态：2/3 SWE PASS（astropy-12907 + 14365） |
 | 9 | [`08-run-bash-and-allowed-tools.md`](./08-run-bash-and-allowed-tools.md) | `f7e9a1b` | `run_bash` 沙箱 + skill `allowed-tools` 强制执行 + `safe_resolve` 预存 bug 修复 |
-| 10 | [`wire-evidence-index.md`](./wire-evidence-index.md) | — | 全部 wire capture 索引（26 份 HTTP body） |
+| 10 | [`09-experiments.md`](./09-experiments.md) | — | 26 份 capture 上的诊断实验：tool 频率 / submit_text 模式 / skill 沉睡 / 温度敏感性 sweep |
+| 11 | [`wire-evidence-index.md`](./wire-evidence-index.md) | — | 全部 wire capture 索引（30 份 HTTP body） |
 
 ## 调试方法学
 
