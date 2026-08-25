@@ -29,6 +29,31 @@ fallback** for tool-call parsing.  Concretely:
    `src/diagnostics/text_tool_parser.py` for the offline-only diagnostic
    surface; it is never imported by `src/agent.py`.
 
+### Verification (2026-08-25)
+
+This invariant has been **verified end-to-end** by capturing every
+`POST /v1/chat/completions` request/response to disk and asserting:
+
+- `tool_call_native_rate == 1.0` on every SWE-bench run
+- `fallback_markers == []` on every SWE-bench run
+- tool_call_id linkage correct (emitted IDs match return IDs)
+
+Result: **2/3 astropy SWE-bench Lite PASS** (`astropy-12907`,
+`astropy-14365`); the third (`astropy-14182`) is `WRONG_FILE` but
+still went through native tool calls with `native_rate=1.0` —
+harness clean, model capability ceiling.  See
+[`iteration/07-final-state-and-swe-pass.md`](./iteration/07-final-state-and-swe-pass.md)
+for the authoritative verdict and `eval/result_coder_swe_all.json`
+for the raw numbers.
+
+### Bug history
+
+The full chronology of harness bugs found and fixed during
+2026-08-24 ~ 2026-08-25 (symptom → wire evidence → root cause → fix →
+verification) is recorded in [`iteration/`](./iteration/README.md)
+in commit order.  Read it before touching anything in `src/agent.py`
+or `src/tools/`.
+
 
 
 

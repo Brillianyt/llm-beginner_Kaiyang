@@ -360,7 +360,9 @@ export QWEN_MODEL=claude-sonnet-4-5
 python -m eval.run
 ```
 
-> 32B+ 模型上 S4 通过率预计显著提升（7B 模型局限）。`README.md` DoD 勾选表 + `eval/result.json` 含 6 条 engineering notes 帮你做模型调优决策。
+> 32B+ 模型上 S4 通过率预计显著提升（7B 模型局限）。`README.md` DoD 勾选表 + `eval/result_coder_swe_all.json` 含 verdict / native_rate / fallback_markers / files_correct 等结构化指标。
+
+**2026-08-25 更新**：本轮修了 4 个 harness bug（chat template reasoning / `_PATCH_FENCE_RE` / `RECENT_EDIT_FILE` auto-scope / test-summary stuck detector），astropy SWE-bench Lite **2/3 PASS**（12907 + 14365），第三个 14182 是 `WRONG_FILE` 但仍 `native_rate=1.0`——harness 干净，14182 是模型能力上限。完整 bug 历史（症状 / 根因 / wire 证据 / 修复 / 验证）见 [`iteration/`](./iteration/README.md)。
 
 ---
 
@@ -385,7 +387,9 @@ A: 三点：(1) tool-subprocess 模型（pytest 真在子进程跑）vs smolagen
 A: 7B 在 8GB+ 显存就能跑，量化后甚至 CPU 也能跑；32B 模型在 SWE-bench 类任务上明显更强但需要 24GB+ 显存。harness 与模型解耦——`QWEN_MODEL` 切。
 
 **Q: SWE-bench 0/3 是 bug 吗？**
-A: 不是。`eval/result.json` 的 `engineering_notes` 解释了：agent 持续 12 turn 真正读了 rule 文件，但 SQL parser 修复需要更深层语义。这是 Qwen-7B 能力上限，harness 本身已经验证（smolagents 沙箱限制下 0/1 vs 我们 1/1 已经能说明问题）。**2026-08-24 更新**：本轮重新抽样 3 题（astropy），实测同样 `0/3 PASS`——结论不变。本轮同时修了两个 harness 真实 bug（subagent 的 `arguments` 序列化、`test_swebench_lite_sample` 不切 base_commit），harness 路径已稳定。
+A: 不是。`eval/result.json` 的 `engineering_notes` 解释了：agent 持续 12 turn 真正读了 rule 文件，但 SQL parser 修复需要更深层语义。这是 Qwen-7B 能力上限，harness 本身已经验证（smolagents 沙箱限制下 0/1 vs 我们 1/1 已经能说明问题）。
+
+**2026-08-25 更新**：本轮修了 4 个 harness bug（chat template 抑制 reasoning、`_PATCH_FENCE_RE` 漏 `python` 围栏、`run_tests` 默认 scope 太宽、stuck 检测器抓不到 cosmetic edit），astropy SWE-bench Lite **2/3 PASS**（`astropy-12907` 5 turn completed，`astropy-14365` 12 turn max_turns，两者 `tool_call_native_rate=1.0` / `fallback_markers=[]`）。第三个 `astropy-14182` 是 `WRONG_FILE`——模型第 1 轮直接 `submit_text` 放弃，但 wire 仍走 native tool call 通道（`native_rate=1.0`），属于模型能力上限而不是 harness bug。完整 bug 历史见 [`iteration/`](./iteration/README.md)。
 
 **Q: SGLang 切到 vLLM 后有什么坑？**
 A: 四条经验（2026-08-24 验证）：
