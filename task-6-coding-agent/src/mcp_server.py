@@ -68,52 +68,70 @@ def _build_mcp_server():
     """Build an ``mcp.server.Server`` instance with every tool registered.
 
     Uses the public SDK types — ``mcp.Tool`` for descriptors and the
-    ``list_tools`` / ``call_tool`` request handlers. Survives SDK
-    internal renames because we only touch documented attributes.
+    ``list_tools`` / ``call_tool`` request handlers.  The
+    ``@server.list_tools()`` / ``@server.call_tool()`` decorators were
+    removed in ``mcp`` 2.0; the new API passes them as constructor
+    kwargs to ``Server(...)``.  Bug fix in 2026-08-25 — previously the
+    stdio entry-point crashed immediately with ``AttributeError:
+    'Server' object has no attribute 'list_tools'`` and every test
+    went through the in-process ``call_tool`` fast path instead.
     """
-    import asyncio
     from mcp import Tool
     from mcp.server import Server
-
-    server: Server = Server("coding-agent-tools")
+    from mcp.types import CallToolResult, ListToolsResult, TextContent
 
     import os as _os
     _default_repo = Path(_os.environ.get(
         "CODING_AGENT_REPO_ROOT", _os.getcwd()
     )).resolve()
 
-    @server.list_tools()
-    async def _handle_list_tools() -> list[Tool]:
-        return [
-            Tool(
-                name=t.name,
-                description=t.description,
-                inputSchema=t.input_schema,
-            )
-            for t in _TOOL_BY_NAME.values()
-        ]
+    async def _handle_list_tools(ctx, params) -> ListToolsResult:
+        return ListToolsResult(
+            tools=[
+                Tool(
+                    name=t.name,
+                    description=t.description,
+                    inputSchema=t.input_schema,
+                )
+                for t in _TOOL_BY_NAME.values()
+            ]
+        )
 
-    @server.call_tool()
-    async def _handle_call_tool(name: str, arguments: dict):
+    async def _handle_call_tool(ctx, params) -> CallToolResult:
+        # ``params`` is a ``CallToolRequestParams`` with ``name`` and ``arguments``.
+        name = params.name
+        arguments = params.arguments or {}
         tool = _TOOL_BY_NAME.get(name)
         if tool is None:
-            return [{"type": "text", "text": f"[ERROR] unknown tool: {name}"}]
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"[ERROR] unknown tool: {name}")],
+                isError=True,
+            )
         # Boundary schema validation — surface bad arguments at the MCP
         # layer instead of letting them reach the tool and explode
         # mid-execution. The tool's own ``inputSchema`` is the contract.
         try:
             import jsonschema  # type: ignore
-            jsonschema.validate(instance=arguments or {}, schema=tool.input_schema)
+            jsonschema.validate(instance=arguments, schema=tool.input_schema)
         except ImportError:
             pass  # jsonschema is optional — tool will validate defensively
         except jsonschema.ValidationError as e:
-            return [{
-                "type": "text",
-                "text": f"[ERROR] invalid arguments for {name}: {e.message}",
-            }]
-        result = tool(arguments or {}, _default_repo)
-        return [{"type": "text", "text": result.content}]
+            return CallToolResult(
+                content=[TextContent(type="text",
+                                     text=f"[ERROR] invalid arguments for {name}: {e.message}")],
+                isError=True,
+            )
+        result = tool(arguments, _default_repo)
+        return CallToolResult(
+            content=[TextContent(type="text", text=result.content)],
+            isError=result.is_error,
+        )
 
+    server: Server = Server(
+        "coding-agent-tools",
+        on_list_tools=_handle_list_tools,
+        on_call_tool=_handle_call_tool,
+    )
     return server
 
 

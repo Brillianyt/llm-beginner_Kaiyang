@@ -17,7 +17,8 @@
 | 9 | [`08-run-bash-and-allowed-tools.md`](./08-run-bash-and-allowed-tools.md) | `f7e9a1b` | `run_bash` 沙箱 + skill `allowed-tools` 强制执行 + `safe_resolve` 预存 bug 修复 |
 | 10 | [`09-experiments.md`](./09-experiments.md) | — | 26 份 capture 上的诊断实验：tool 频率 / submit_text 模式 / skill 沉睡 / 温度敏感性 sweep |
 | 11 | [`10-toyrepo-skill-e2e.md`](./10-toyrepo-skill-e2e.md) | — | Toy-repo 上 3 skill × 2 触发模式的端到端：隐式 0/3 + 显式 3/3 |
-| 12 | [`wire-evidence-index.md`](./wire-evidence-index.md) | — | 全部 wire capture 索引（36 份 HTTP body） |
+| 12 | [`11-toyrepo-skill-subagent-mcp-e2e.md`](./11-toyrepo-skill-subagent-mcp-e2e.md) | — | Toy-repo 三层栈同时跑通：skill + subagent + MCP；附 mcp_server.py 预存 bug 修复 |
+| 13 | [`wire-evidence-index.md`](./wire-evidence-index.md) | — | 全部 wire capture 索引（38 份 HTTP body） |
 
 ## 调试方法学
 

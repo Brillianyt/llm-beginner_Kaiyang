@@ -1,0 +1,41 @@
+{
+  "instance_id": "toyrepo_e2e_all_three",
+  "summary": {
+    "mcp_calls": 2,
+    "skill_loads": 1,
+    "subagent_calls": 1,
+    "tests_passed": false,
+    "all_three_invoked": false
+  },
+  "captured": [
+    {
+      "step": "mcp:read_file",
+      "is_error": false,
+      "preview": "=== /mnt/workspace/llm-beginner_Kaiyang/task-6-coding-agent/data/toy-repo/calcul"
+    },
+    {
+      "step": "mcp:run_bash:pytest",
+      "is_error": false,
+      "preview": "[ERROR] subprocess crashed: [Errno 2] No such file or directory: 'cd'\n  cmd: cd data/toy-repo && python -m pytest -q 2>&1 | tail -10"
+    },
+    {
+      "step": "agent:skill+subagent",
+      "skill_loads": [
+        "test-runner"
+      ],
+      "subagent_invocations_count": 1,
+      "subagent_names": [
+        "test_executor"
+      ],
+      "tool_sequence": [
+        "load_skill",
+        "dispatch_subagent",
+        "write_file",
+        "submit_text"
+      ],
+      "tests_passed": false,
+      "done_reason": "completed",
+      "turn_count": 4
+    }
+  ]
+}

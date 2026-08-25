@@ -1,0 +1,56 @@
+{
+  "instance_id": "mcp_stdio_toyrepo",
+  "summary": {
+    "transport": "stdio JSON-RPC via mcp SDK 2.0",
+    "server": "src/mcp_server.py",
+    "tools_discovered": [
+      "read_file",
+      "write_file",
+      "edit",
+      "list_files",
+      "grep",
+      "run_tests",
+      "git_diff",
+      "git_apply",
+      "run_bash"
+    ],
+    "calls_made": [
+      "read_file",
+      "run_bash"
+    ]
+  },
+  "captured": [
+    {
+      "op": "list_tools",
+      "tools": [
+        "read_file",
+        "write_file",
+        "edit",
+        "list_files",
+        "grep",
+        "run_tests",
+        "git_diff",
+        "git_apply",
+        "run_bash"
+      ]
+    },
+    {
+      "op": "read_file",
+      "args": {
+        "file_path": "/mnt/workspace/llm-beginner_Kaiyang/task-6-coding-agent/data/toy-repo/calculator.py",
+        "limit": 5
+      },
+      "is_error": false,
+      "len": 211,
+      "preview": "=== /mnt/workspace/llm-beginner_Kaiyang/task-6-coding-agent/data/toy-repo/calculator.py ===\nlines 1..5 of 11  (utf-8)\n\nd"
+    },
+    {
+      "op": "run_bash",
+      "args": {
+        "cmd": "echo hello-from-mcp"
+      },
+      "is_error": false,
+      "preview": "exit_code=0 duration_s=0.00\ncmd: echo hello-from-mcp\nstdout:\nhello-from-mcp\n\nstderr:\n"
+    }
+  ]
+}
