@@ -10,7 +10,7 @@
 {%- if tools is defined and tools %}
     {{- "<|tools|>" ~ tools | tojson ~ "<|/tools|>" }}
 {%- endif %}
-{{- 'You may output a SHORT reasoning sentence (1-2 lines max) BEFORE the JSON object to plan your next step. After the reasoning, output exactly one JSON object describing the tool call. Do NOT use code fences inside the JSON object.\n' }}
+{{- 'You may output a SHORT reasoning sentence (1-2 lines max) BEFORE the tool call. After the reasoning, output exactly ONE tool call as a JSON object of the form {"name": "<tool_name>", "arguments": {<args-json-object>}}. Do NOT use code fences inside the JSON. Do NOT wrap the JSON in any XML tag.\n' }}
 {{- system_message }}
 {{- '<|im_end|>\n' }}
 {%- for message in loop_messages %}
