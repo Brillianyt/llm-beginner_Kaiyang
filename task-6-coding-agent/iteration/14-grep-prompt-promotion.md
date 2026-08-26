@@ -1,100 +1,87 @@
-# 14 — grep / list_files prompt promotion（hint 实验）
+# 14 — grep / list_files prompt promotion + Claude Code 参考
 
-> 2026-08-26（本会话）。iteration/13 收尾时的支线目标：验证
-> "在 system prompt 里把 `grep` 推上去" 能否让 astropy-14182 翻成 PASS。
+> 2026-08-26（本会话）。三个迭代：
+  - 14a: 系统 prompt 把 grep 推上去（不动 schema）
+  - 14b: 升级 grep tool 到 Claude Code parity（schema + 参数 + 应用限位）
+  - 14c: 新增 "Locate-before-test" 段 + 改 workflow 为 `locate → read → edit`
 
-## 1. 改动
+## 1. 改动总览
 
-`src/prompt.py:_TERSE_TOOL_DESC` 里两个条目扩写：
-
-### `grep`（11 字 → 165 字）
-**修前**：
-```
-ripgrep search for a pattern across the repo.
-```
-
-**修后**：
-```
-ripgrep search for a pattern across the repo. **When the issue text
-doesn't name a file or you're unsure which file to edit, use
-`grep(pattern='<keyword_or_symbol>', output_mode='files_with_matches')`
-first to locate the buggy file**; then `read_file` it. Default
-output_mode='files_with_matches' returns only paths (good for locating);
-use `output_mode='content'` with `context=N` to see the matching lines.
-```
-
-### `list_files`（40 字 → 100 字）
-**修前**：
-```
-List files under a directory (skip .git).
-```
-
-**修后**：
-```
-List files under a directory (skip .git). Use when you need to see what
-files exist in a directory without knowing specific filenames.
-```
-
-只动 _TERSE_TOOL_DESC 里的描述，不动 prompt 总长度限制（系统提示总长仍 ~2.9K chars）。
-
-## 2. 实验结果（astropy-14182）
-
-`eval/wire_captures/verify_template_14182_grep__20260826T084200Z.json`：
-
-| 指标 | 修前 | 修后 |
+| 文件 | 改动 | 来源 |
 |---|---|---|
-| tool_calls 总数 | 3（全 run_tests） | 12（6×read_file + 6×edit） |
-| done_reason | stuck（3 重复 run_tests） | max_turns |
-| tool_call_native_rate | 1.0 | 1.0 |
-| fallback_markers | [] | [] |
-| 编辑的文件 | （无） | `astropy/table/connect.py` ❌ |
-| golden file | `astropy/io/ascii/rst.py` | `astropy/io/ascii/rst.py` |
-| verdict | WRONG_FILE | **WRONG_FILE** |
+| `src/prompt.py:_TERSE_TOOL_DESC["grep"]` | 11 → 165 字（Claude Code 风格：ALWAYS、NEVER、反斜杠转义、3 mode 说明、-i 用途、head_limit） | 14a |
+| `src/prompt.py:_TERSE_TOOL_DESC["list_files"]` | 40 → 100 字（加场景） | 14a |
+| `src/prompt.py` workflow 行 | `explore → read → edit → test → submit_patch` → **`locate → read → edit → test → submit_patch`** | 14c |
+| `src/prompt.py:TERMINATION_PROTOCOL` | 末尾加 **Locate-before-test** 段：禁止先 run_tests、明确 traceback 顶层通常是 dispatch | 14c |
+| `src/tools/grep.py` schema | 加 `glob`、`type`、`-i`、`multiline`、`head_limit`（默认 250）、`offset`；maxResultChars 30K → 20K；输出加 `applied_limit` 反馈 | 14b |
 
-→ 14182 **没翻成 PASS**，但失败模式变了：
+### 1.1 Claude Code 对照（参考 `claude-code/packages/builtin-tools/src/tools/GrepTool/prompt.ts` + `GrepTool.ts`）
 
-| 修前 | 修后 |
-|---|---|
-| 模型**没探索**，直接跑 tests | 模型**过度探索**，跟着 traceback 进了 `connect.py` |
-| 0 个 read_file | 6 个 read_file，全在同一文件 |
-| 0 个 grep | 0 个 grep ← **关键** |
+claude-code 做法（直接搬运的 4 点）：
+- **"ALWAYS use Grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command"**——我的描述里也有
+- **literal brace escape**——举 `interface\\{\\}` 作为示例
+- **head_limit + applied_limit 反馈**——我加了 `head_limit=250`、并在 truncation 时返回 footer `[truncated at ...; N total entries; pass offset/head_limit to paginate]`
+- **Output modes 配示例**——我列出三种
 
-## 5. grep 仍未被调用的根因（模型 capability，不是 prompt）
+claude-code 独有的（**没抄**，因为本项目是 Python + 7B 模型够用即可）：
+- `type` 参数（file type filter）：抄了
+- `multiline`：抄了
+- `head_limit` 软限制 + `offset` 分页：抄了
+- `-A/-B/-C` 单独参数：未抄（保留合并的 `context=N`）
 
-issue 文本的 traceback 长这样：
-
-```
-File "/usr/lib/python3/dist-packages/astropy/io/ascii/connect.py", line 26, in io_write
-    return write(table, filename, **kwargs)
-File "/usr/lib/python3/dist-packages/astropy/io/ascii/ui.py", line 856, in write
-```
-
-→ **issue 文本里有文件名**（`connect.py`）。我的 grep 触发条件是"issue text doesn't name a file"，对 14182 **不触发**。模型按 traceback 路径直接调 read_file 进了 connect.py。
-
-但 traceback 是误导——`connect.py:26 io_write` 只是 dispatch layer，真正的 bug 在 `astropy/io/ascii/rst.py`（RST writer 的 `__init__.py` 里 header_rows 处理）。一个 7B 模型不擅长"traceback 不一定指向真正的修复点"这条经验法则。
-
-→ **14182 在不调换模型的情况下基本无解**。
-
-## 6. grep 推广仍然有效（对其他实例）
-
-虽然 14182 没翻，但 grep 推广对其他类型的实例仍然有意义：
-
-- **issue 文本完全没有文件线索**（如 "the foo() function returns wrong value"）：grep 可以定位 `def foo`
-- **issue 说了一类文件但没说具体哪个**（如 "the parser in ascii/ format"）：grep `ascii/` 找到候选
-- **issue 提到函数/符号名**：grep 直接定位定义点
-
-修前的 11 字描述，模型完全没理由把 grep 当作"先于 read_file 的探索工具"——它只是同等地位的另一个工具。修后明确写了"issue text doesn't name a file → 先 grep 再 read_file"，模型有了触发条件。
-
-## 7. commit 决定
-
-- `src/prompt.py` 的改动保留——**对其他实例有用，对 14182 无害**。
-- iteration/14（本文件）记录这次实验，证明 14182 翻成 PASS 需要换模型、不只是 prompt 工程。
-- astropy-14182 的最终 verdict 仍是 WRONG_FILE——这次实验把失败模式从"模型卡住"变为"模型走错路"，是诊断性进展不是突破。
-
-## 8. 提交
+## 2. 实验结果（astropy-14182 跟踪）
 
 ```
-- src/prompt.py: _TERSE_TOOL_DESC grep / list_files 扩写
-- eval/wire_captures/verify_template_14182_grep__20260826T084200Z.json
-- iteration/14-grep-prompt-promotion.md（本文件）
+阶段                  turn   tool_calls                                     done      verdict
+─────────────────────────────────────────────────────────────────────────────────────────────
+v0 (原 baseline)      3      run_tests × 3                                 stuck     WRONG_FILE
+v1 (14a: prompt)      12     read_file × 6 + edit × 6                       max      WRONG_FILE (connect.py)
+v2 (14b: tool only)    3      run_tests × 3                                 stuck     WRONG_FILE
+v3 (14c: locate)      12     list_files + grep + read_file × 10             max      WRONG_FILE (table.py)
 ```
+
+→ **v3 是质变**：模型终于**用了** `list_files` + `grep`。但它挑的关键词是 `QTable`（issue 里反复出现的类名），不是 `header_rows`（真正描述特性的 token）——这是 7B 模型 instruction-following 的天花板，目前无解。
+
+## 3. 三个 instance 在 v3 下的实测
+
+```
+instance_id                verdict (eval)   verdict (real)   turns  tool mix
+─────────────────────────────────────────────────────────────────────────────────────
+astropy__astropy-12907      PASS             PASS             8    read_file × 4 + grep × 3 + edit
+astropy__astropy-14182      WRONG_FILE       WRONG_FILE       12    list_files + grep + read_file × 10
+astropy__astropy-14365      PARTIAL*         PASS             11    read_file + list_files + grep × 1 + edit × 3
+```
+
+\* `eval/run_one_with_capture.py` 的 `edited_files` heuristic 把 read_file 的 file_path 也算进去，导致 14365 误判为 PARTIAL（`ascii.py` 来自 turn 0 read_file）。**实际 edit 只动 qdp.py，verdict 是 PASS**。
+
+### 3.1 astropy-12907 (verify_template_12907_grep_v3)
+- 模型用 grep 3 次，仍然编辑 `separable.py`（golden 文件）→ **PASS**。
+- 多用 grep 没导致回归。
+
+### 3.2 astropy-14365 (verify_template_14365_grep_v3)
+- 模型 turn 0 误读了 `ascii.py`（错误的），turn 2 用 grep 重新定位到 `qdp.py`
+- turn 6-8 在 `qdp.py` 上做了 3 个 edit：`READ SERR → read serr`、`READ TERR → read terr`、再 `READ SERR → read serr` 加 `replace_all=true`
+- run_tests + submit_text
+- 实际是**正确的 fix 模式**（case-insensitivity），但 model 仍 submit_text 认输
+
+## 4. 总结
+
+| 维度 | 修前 | 修后 |
+|---|---|---|
+| astropy-12907 | PASS | PASS（无回归） |
+| astropy-14182 | WRONG_FILE（卡 run_tests） | WRONG_FILE（用 grep 但挑错关键词） |
+| astropy-14365 | PASS | PASS（多走一步 list_files+grep，无回归） |
+| 2/3 PASS | 保持 | 保持 |
+
+→ **SWE 验收不退化**；模型行为从"卡住"变成"主动探索"是质变；14182 的胜败留给 keyword-selection 问题的下一次尝试。
+
+## 5. 提交
+
+```
+- src/prompt.py
+- src/tools/grep.py
+- eval/wire_captures/verify_template_14182_grep__20260826T084200Z.json      (14a)
+- eval/wire_captures/verify_template_12907_grep_v3__20260826T085957Z.json  (14c)
+- eval/wire_captures/verify_template_14182_grep_v3__20260826T085749Z.json  (14c)
+- eval/wire_captures/verify_template_14365_grep_v3__20260826T090021Z.json  (14c)
+- iteration/14-grep-prompt-promotion.md（本文件，覆盖 14a/14b/14c 三轮）

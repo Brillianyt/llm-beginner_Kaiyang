@@ -44,13 +44,14 @@ _TERSE_TOOL_DESC: dict[str, str] = {
         "filenames."
     ),
     "grep": (
-        "ripgrep search for a pattern across the repo. **When the issue "
-        "text doesn't name a file or you're unsure which file to edit, "
-        "use `grep(pattern='<keyword_or_symbol>', output_mode='files_with_matches')` "
-        "first to locate the buggy file**; then `read_file` it. Default "
-        "output_mode='files_with_matches' returns only paths (good for "
-        "locating); use `output_mode='content'` with `context=N` to see "
-        "the matching lines."
+        "ripgrep search tool. **ALWAYS use `grep` for search tasks — never "
+        "shell out to `rg` via `run_bash`.** Supports full regex; literal "
+        "braces need escaping (`interface\\{\\}`). Output modes: "
+        "`files_with_matches` (default, paths only — best for locating the "
+        "buggy file), `content` (matching lines with `context=N`), `count`. "
+        "Filter with `glob='*.py'`/`type='py'` or narrow `path`. Pass "
+        "`-i=true` for case-insensitive (useful for case-sensitivity bugs). "
+        "`head_limit` defaults to 250; tool reports when results truncated."
     ),
     "run_tests": (
         "Run pytest. Pass the FAIL_TO_PASS test path in `extra_args` "
@@ -70,6 +71,13 @@ def _tool_line(t: dict) -> str:
     name = t["name"]
     desc = _TERSE_TOOL_DESC.get(name) or t["description"].split(".")[0] + "."
     return f"- `{name}` — {desc}"
+
+
+SUBAGENT_PROTOCOL = (
+    "Subagents: `dispatch_subagent(name, task)` runs a sub-agent and "
+    "returns only its final plain-text summary. Available: "
+    "`search_executor` (read-only exploration), `test_executor` (pytest).\n"
+)
 
 
 TERMINATION_PROTOCOL = (
@@ -93,12 +101,14 @@ TERMINATION_PROTOCOL = (
     "  names the buggy function. For matrix / numeric bugs check\n"
     "  indexing and `np.zeros` initial-value assignment; for\n"
     "  case-sensitivity bugs prefer `re.IGNORECASE` on `re.compile`.\n"
-)
-
-SUBAGENT_PROTOCOL = (
-    "Subagents: `dispatch_subagent(name, task)` runs a sub-agent and "
-    "returns only its final plain-text summary. Available: "
-    "`search_executor` (read-only exploration), `test_executor` (pytest).\n"
+    "\n"
+    "Locate-before-test:\n"
+    "- Never call `run_tests` until you've located the buggy file. If the\n"
+    "  issue text names a file, `read_file` it. If it only names a symbol,\n"
+    "  feature, or error string, call `grep(pattern='<keyword>',\n"
+    "  output_mode='files_with_matches')` first to find the file. The traceback\n"
+    "  at the bottom of a stack usually points to a dispatch / wrapper — the\n"
+    "  real fix is often in the deeper caller, not the topmost frame.\n"
 )
 
 
@@ -117,7 +127,7 @@ def build_system_prompt(
     subagent_block = ", ".join(subagent_names) if subagent_names else "(none)"
     return (
         f"You are a Mini Coding Agent operating in `{repo_root}` on {today} (UTC).\n"
-        f"Workflow: explore → read → edit → test → submit_patch. "
+        f"Workflow: locate → read → edit → test → submit_patch. "
         f"Use absolute paths. ONE tool call per assistant message.\n\n"
         f"## Tools\n{tool_lines}\n\n"
         f"## Skills (Level-1 — load body via `load_skill`)\n{skills_block}\n"
