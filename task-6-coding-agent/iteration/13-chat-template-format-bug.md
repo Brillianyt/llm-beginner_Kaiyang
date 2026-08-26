@@ -153,7 +153,22 @@ verdict: PASS
 
 **验收：≥1/3 PASS ✓**（astropy-12907 是 iteration/07 中 2/3 PASS 的原成员之一）。
 
-### 4.3 与旧 capture (`stuck_detector_14365__20260825T021926Z.json`) 的对比
+### 4.3 完整三实例结果
+
+```
+instance_id           verdict      done_reason  turns  rate   edited          golden
+astropy__astropy-12907  PASS        completed    6      1.0    separable.py    separable.py
+astropy__astropy-14182  WRONG_FILE  stuck        3      1.0    (none)          rst.py
+astropy__astropy-14365  PASS        completed    8      1.0    qdp.py          qdp.py
+```
+
+→ **2 / 3 PASS**（与 iteration/07 的 baseline 一致；chat_template 修复没让模型变弱，也没让 14182 选错文件的 bug 消失——该实例的失败是模型能力问题）。
+
+证据：
+- `eval/wire_captures/verify_template_14182__20260826T083429Z.json` —— 14182 stuck 在 run_tests × 3，无编辑
+- `eval/wire_captures/verify_template_14365__20260826T083443Z.json` —— 14365 8 turns，含 read_file/edit/run_tests/submit_text 全流程
+
+### 4.4 与旧 capture (`stuck_detector_14365__20260825T021926Z.json`) 的对比
 
 | 指标 | 旧 capture | 新 capture |
 |---|---|---|
