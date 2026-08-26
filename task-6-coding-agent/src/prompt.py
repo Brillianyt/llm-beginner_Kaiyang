@@ -38,8 +38,20 @@ _TERSE_TOOL_DESC: dict[str, str] = {
         "Exact string replacement. `old_string` must match uniquely "
         "unless `replace_all=true`. File must have been read first."
     ),
-    "list_files": "List files under a directory (skip .git).",
-    "grep": "ripgrep search for a pattern across the repo.",
+    "list_files": (
+        "List files under a directory (skip .git). Use when you need to "
+        "see what files exist in a directory without knowing specific "
+        "filenames."
+    ),
+    "grep": (
+        "ripgrep search for a pattern across the repo. **When the issue "
+        "text doesn't name a file or you're unsure which file to edit, "
+        "use `grep(pattern='<keyword_or_symbol>', output_mode='files_with_matches')` "
+        "first to locate the buggy file**; then `read_file` it. Default "
+        "output_mode='files_with_matches' returns only paths (good for "
+        "locating); use `output_mode='content'` with `context=N` to see "
+        "the matching lines."
+    ),
     "run_tests": (
         "Run pytest. Pass the FAIL_TO_PASS test path in `extra_args` "
         "(e.g. ['/abs/path/to/test_foo.py::test_specific']); otherwise "
